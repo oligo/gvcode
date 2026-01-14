@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"gioui.org/app"
-	"gioui.org/font"
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -100,7 +99,7 @@ func (ed *EditorApp) layout(gtx C, th *material.Theme) D {
 				}.Layout(gtx,
 					layout.Flexed(1.0, func(gtx layout.Context) layout.Dimensions {
 						ed.state.WithOptions(
-							gvcode.WithFont(font.Font{Typeface: "monospace", Weight: font.SemiBold}),
+							//gvcode.WithFont(font.Font{Typeface: "monospace", Weight: font.SemiBold}),
 							gvcode.WithTextSize(unit.Sp(12)),
 							gvcode.WithLineHeight(0, 1.5),
 						)
