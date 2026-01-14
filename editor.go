@@ -72,6 +72,8 @@ type Editor struct {
 	// gutterWidth can be used to guide to set the horizontal offset when
 	// laying out a horizontal scrollbar.
 	gutterWidth int
+	// word highlighting state
+	wordHighlighter wordHighlighter
 }
 
 type imeState struct {
@@ -121,6 +123,7 @@ func (e *Editor) initBuffer() {
 	}
 
 	e.text.CaretWidth = unit.Dp(1)
+	e.wordHighlighter.editor = e
 }
 
 // Update the state of the editor in response to input events. Update consumes editor
@@ -257,6 +260,10 @@ func (e *Editor) layout(gtx layout.Context) layout.Dimensions {
 		e.paintSelection(gtx, selectColor)
 		e.paintLineHighlight(gtx, lineColor)
 		e.text.HighlightMatchingBrackets(gtx, selectColor.Op(gtx.Ops))
+		if e.wordHighlighter.IsDirty() {
+			e.wordHighlighter.HighlightAtCaret(e.colorPalette.SelectColor)
+		}
+
 		e.paintText(gtx, textMaterial)
 	}
 	if gtx.Enabled() {

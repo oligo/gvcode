@@ -115,6 +115,110 @@ func (e *TextView) ReadWord(bySpace bool) (string, int) {
 	return string(buf), len(left)
 }
 
+// WordBoundariesAt returns the start and end rune offsets of the word at the given caret position.
+// If caret is on a word separator, start and end will both equal caret (empty word).
+// The bySpace parameter controls whether only spaces are considered separators (true) or
+// custom word separators are used (false).
+func (e *TextView) WordBoundariesAt(caret int, bySpace bool) (start, end int) {
+	separator := func(r rune) bool {
+		if bySpace {
+			return unicode.IsSpace(r)
+		}
+		return e.IsWordSeperator(r)
+	}
+
+	// Read leftwards from caret-1
+	left := e.readBySeperator(-1, caret-1, separator)
+	// Read rightwards from caret
+	right := e.readBySeperator(1, caret, separator)
+
+	start = caret - len(left)
+	end = caret + len(right)
+	return start, end
+}
+
+// FindAllWordOccurrences returns the start and end rune offsets of all occurrences of the word
+// spanning from start to end (exclusive). The bySpace parameter controls whether only spaces
+// are considered separators (true) or custom word separators are used (false).
+// This implementation scans the document once with O(n) complexity.
+func (e *TextView) FindAllWordOccurrences(start, end int, bySpace bool) [][2]int {
+	if start >= end {
+		return nil
+	}
+	wordLen := end - start
+	// Read the target word runes for comparison
+	targetWord := make([]rune, wordLen)
+	for i := 0; i < wordLen; i++ {
+		r, err := e.src.ReadRuneAt(start + i)
+		if err != nil {
+			// Should not happen if start/end are valid, but bail out
+			return nil
+		}
+		targetWord[i] = r
+	}
+
+	separator := func(r rune) bool {
+		if bySpace {
+			return unicode.IsSpace(r)
+		}
+		return e.IsWordSeperator(r)
+	}
+
+	var occurrences [][2]int
+	totalLen := e.src.Len()
+
+	// Helper to compare rune slices
+	runeSliceEqual := func(a, b []rune) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	i := 0
+	for i < totalLen {
+		// Skip separators
+		for i < totalLen && separator(e.peekRune(i)) {
+			i++
+		}
+		if i >= totalLen {
+			break
+		}
+
+		wordStart := i
+		// Collect runes for current word
+		wordBuf := make([]rune, 0, wordLen)
+		for i < totalLen && !separator(e.peekRune(i)) {
+			r, _ := e.src.ReadRuneAt(i)
+			wordBuf = append(wordBuf, r)
+			i++
+			// Early exit if word already longer than target
+			if len(wordBuf) > wordLen {
+				break
+			}
+		}
+
+		// Check if this word matches the target
+		if len(wordBuf) == wordLen && runeSliceEqual(wordBuf, targetWord) {
+			occurrences = append(occurrences, [2]int{wordStart, wordStart + wordLen})
+		}
+		// i is already positioned at separator or end, loop continues
+	}
+
+	return occurrences
+}
+
+// peekRune safely reads a rune at offset, returning 0 on error.
+func (e *TextView) peekRune(offset int) rune {
+	r, _ := e.src.ReadRuneAt(offset)
+	return r
+}
+
 // ReadUntil reads in the specified direction from the current caret position until the
 // seperator returns false. It returns the read text.
 func (e *TextView) ReadUntil(direction int, seperator func(r rune) bool) string {
