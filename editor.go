@@ -74,6 +74,8 @@ type Editor struct {
 	gutterWidth int
 	// word highlighting state
 	wordHighlighter wordHighlighter
+	// selection highlighting state
+	selectionHighlighter selectionHighlighter
 }
 
 type imeState struct {
@@ -124,6 +126,7 @@ func (e *Editor) initBuffer() {
 
 	e.text.CaretWidth = unit.Dp(1)
 	e.wordHighlighter.editor = e
+	e.selectionHighlighter.editor = e
 }
 
 // Update the state of the editor in response to input events. Update consumes editor
@@ -262,6 +265,9 @@ func (e *Editor) layout(gtx layout.Context) layout.Dimensions {
 		e.text.HighlightMatchingBrackets(gtx, selectColor.Op(gtx.Ops))
 		if e.wordHighlighter.IsDirty() {
 			e.wordHighlighter.HighlightAtCaret(e.colorPalette.SelectColor)
+		}
+		if e.selectionHighlighter.IsDirty() {
+			e.selectionHighlighter.HighlightSelection(e.colorPalette.SelectColor)
 		}
 
 		e.paintText(gtx, textMaterial)

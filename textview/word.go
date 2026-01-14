@@ -213,6 +213,53 @@ func (e *TextView) FindAllWordOccurrences(start, end int, bySpace bool) [][2]int
 	return occurrences
 }
 
+// FindAllTextOccurrences returns the start and end rune offsets of all occurrences of the text
+// spanning from start to end (exclusive). This implementation scans the document once with O(n) complexity.
+// It matches exact rune sequences regardless of word boundaries.
+func (e *TextView) FindAllTextOccurrences(start, end int) [][2]int {
+	if start >= end {
+		return nil
+	}
+	textLen := end - start
+	// Read the target text runes for comparison
+	targetText := make([]rune, textLen)
+	for i := 0; i < textLen; i++ {
+		r, err := e.src.ReadRuneAt(start + i)
+		if err != nil {
+			// Should not happen if start/end are valid, but bail out
+			return nil
+		}
+		targetText[i] = r
+	}
+
+	var occurrences [][2]int
+	totalLen := e.src.Len()
+
+	i := 0
+	for i < totalLen {
+		// Look for potential match of first rune
+		r := e.peekRune(i)
+		if r == targetText[0] && i+textLen <= totalLen {
+			// Possible match, check remaining runes
+			match := true
+			for j := 1; j < textLen; j++ {
+				if e.peekRune(i+j) != targetText[j] {
+					match = false
+					break
+				}
+			}
+			if match {
+				occurrences = append(occurrences, [2]int{i, i + textLen})
+				i += textLen // skip over matched text (non-overlapping)
+				continue
+			}
+		}
+		i++
+	}
+
+	return occurrences
+}
+
 // peekRune safely reads a rune at offset, returning 0 on error.
 func (e *TextView) peekRune(offset int) rune {
 	r, _ := e.src.ReadRuneAt(offset)
