@@ -20,7 +20,10 @@ func paintLineNumber(gtx layout.Context, shaper *text.Shaper, params text.Parame
 	params.MinWidth = 0
 	params.MaxLines = 1
 
-	maxWidth := getMaxLineNumWidth(shaper, params, len(*paragraphs))
+	// Ensure at least 4 digits width is preserved for line numbers.
+	maxLines := max(len(*paragraphs), 1000)
+
+	maxWidth := getMaxLineNumWidth(shaper, params, maxLines)
 	params.MinWidth = maxWidth.Ceil()
 
 	var dims layout.Dimensions
