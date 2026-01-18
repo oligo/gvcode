@@ -180,28 +180,8 @@ func (pop *CompletionPopup) Layout(gtx layout.Context, items []gvcode.Completion
 		})
 	contentCall := macro.Stop()
 
-	// Calculate shadow and border dimensions
-	cornerRadius := gtx.Dp(unit.Dp(6))
-	shadowOffset := gtx.Dp(unit.Dp(2))
-	shadowBlur := gtx.Dp(unit.Dp(8))
-
-	// Draw shadow layers (from outer to inner for depth effect)
-	shadowColors := []color.NRGBA{
-		{A: 0x08},
-		{A: 0x10},
-		{A: 0x18},
-	}
-	for i, shadowColor := range shadowColors {
-		offset := shadowOffset + shadowBlur - i*(shadowBlur/len(shadowColors))
-		shadowRect := image.Rectangle{
-			Min: image.Point{X: offset / 2, Y: offset / 2},
-			Max: image.Point{X: contentDims.Size.X + offset, Y: contentDims.Size.Y + offset},
-		}
-		paint.FillShape(gtx.Ops, shadowColor,
-			clip.UniformRRect(shadowRect, cornerRadius+offset/4).Op(gtx.Ops))
-	}
-
 	// Draw background with rounded corners
+	cornerRadius := gtx.Dp(unit.Dp(6))
 	bgRect := image.Rectangle{Max: contentDims.Size}
 	defer clip.UniformRRect(bgRect, cornerRadius).Push(gtx.Ops).Pop()
 	paint.Fill(gtx.Ops, pop.Theme.Bg)

@@ -2,6 +2,7 @@ package textview
 
 import (
 	"image"
+	"image/color"
 	"math"
 
 	"gioui.org/layout"
@@ -111,7 +112,31 @@ func (e *TextView) PaintOverlay(gtx layout.Context, offset image.Point, overlay 
 		offset.Y += padding
 	}
 
-	defer op.Offset(offset.Sub(e.scrollOff)).Push(gtx.Ops).Pop()
+	// Calculate adjusted offset for drawing
+	adjustedOffset := offset.Sub(e.scrollOff)
+
+	// Draw shadow layers before the overlay content
+	cornerRadius := gtx.Dp(unit.Dp(6))
+	shadowOffset := gtx.Dp(unit.Dp(2))
+	shadowBlur := gtx.Dp(unit.Dp(8))
+
+	shadowColors := []color.NRGBA{
+		{A: 0x08},
+		{A: 0x10},
+		{A: 0x18},
+	}
+
+	for i, shadowColor := range shadowColors {
+		layerOffset := shadowOffset + shadowBlur - i*(shadowBlur/len(shadowColors))
+		shadowRect := image.Rectangle{
+			Min: adjustedOffset.Add(image.Point{X: layerOffset / 2, Y: layerOffset / 2}),
+			Max: adjustedOffset.Add(image.Point{X: dims.Size.X + layerOffset, Y: dims.Size.Y + layerOffset}),
+		}
+		paint.FillShape(gtx.Ops, shadowColor,
+			clip.UniformRRect(shadowRect, cornerRadius+layerOffset/4).Op(gtx.Ops))
+	}
+
+	defer op.Offset(adjustedOffset).Push(gtx.Ops).Pop()
 	defer clip.Rect(viewport.Sub(e.scrollOff)).Push(gtx.Ops).Pop()
 	call.Add(gtx.Ops)
 }
