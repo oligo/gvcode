@@ -87,7 +87,11 @@ func (dc *DefaultCompletion) OnText(ctx gvcode.CompletionContext) {
 
 	if dc.session != nil && dc.session.IsValid() {
 		dc.updateCandidates(dc.session.Update(ctx))
-		return
+		if dc.session.IsValid() {
+			return
+		}
+		// Session became invalid (e.g., terminated by a trigger char like ".").
+		// Fall through to check if input can start a new completion session.
 	}
 
 	var completor *delegatedCompletor
@@ -157,10 +161,9 @@ func (dc *DefaultCompletion) OnConfirm(idx int) {
 	candidate := dc.candidates[idx]
 	editRange := candidate.TextEdit.EditRange
 
-	if editRange == (gvcode.EditRange{}) ||
-		containsRange(dc.session.PrefixRange(), editRange) { // Only handles replace edit now.
-		editRange = dc.session.PrefixRange()
-	}
+	// Merge the LSP's edit range with our tracked prefix range to ensure we
+	// replace both the LSP's detected token and everything the user typed.
+	editRange = mergeRange(editRange, dc.session.PrefixRange())
 
 	caretStart, caretEnd := editRange.Start.Runes, editRange.End.Runes
 	// Assume line/column is set, convert the line/column position to rune offsets.
@@ -182,14 +185,32 @@ func (dc *DefaultCompletion) OnConfirm(idx int) {
 	dc.Cancel()
 }
 
-// containsRange compare r1 and r2 by column to determine if r1 contains r2. This
-// works as the edit ranges for completion are always at the same line.
-func containsRange(r1, r2 gvcode.EditRange) bool {
-	if r1.Start.Line != r2.Start.Line || r1.End.Line != r2.End.Line {
-		return false
+// mergeRange merges two edit ranges on the same line, returning a range that
+// covers both. This ensures we replace everything: the LSP's detected token
+// start and everything the user typed.
+func mergeRange(r1, r2 gvcode.EditRange) gvcode.EditRange {
+	// If either range is empty, return the other
+	if r1 == (gvcode.EditRange{}) {
+		return r2
+	}
+	if r2 == (gvcode.EditRange{}) {
+		return r1
 	}
 
-	return r1.Start.Column <= r2.Start.Column && r1.End.Column >= r2.End.Column
+	// Only merge if on the same line
+	if r1.Start.Line != r2.Start.Line || r1.End.Line != r2.End.Line {
+		return r1
+	}
+
+	// Take the earlier start and later end
+	result := r1
+	if r2.Start.Column < result.Start.Column {
+		result.Start = r2.Start
+	}
+	if r2.End.Column > result.End.Column {
+		result.End = r2.End
+	}
+	return result
 }
 
 func isSymbolChar(ch rune) bool {
@@ -204,11 +225,11 @@ func isSymbolChar(ch rune) bool {
 }
 
 func canTrigger(tr gvcode.Trigger, input string) bool {
-	// check explicit trigger characters.
+	// Check explicit trigger characters first.
 	if slices.Contains(tr.Characters, input) {
 		return true
 	}
 
-	// else check other allowed characters
+	// Always allow symbol characters to trigger completion.
 	return isSymbolChar([]rune(input)[0])
 }

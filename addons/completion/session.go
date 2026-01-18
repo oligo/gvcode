@@ -48,7 +48,7 @@ func newSession(completor *delegatedCompletor, kind triggerKind) *session {
 }
 
 var terminatingChars = []rune{
-	'{', '}', '(', ')', ',', ';', ' ', '\n', '\t',
+	'{', '}', '(', ')', ',', ';', ' ', '\n', '\t', '.',
 }
 
 func hasTerminateChar(input string) bool {
@@ -70,10 +70,11 @@ func (s *session) Update(ctx gvcode.CompletionContext) []gvcode.CompletionCandid
 		s.state.triggered = false
 		s.prefix = s.prefix[:0]
 		s.prefixRange = gvcode.EditRange{}
-		//log.Printf("triggered new completion, candidates: %d, trigger char: %s", len(s.candidates), s.state.triggerChars)
 	}
 
-	if hasTerminateChar(ctx.Input) {
+	if hasTerminateChar(ctx.Input) && ctx.Input != s.state.triggerChars {
+		// Always terminate when encountering a terminating character
+		// (including trigger characters like "." for method chaining)
 		s.makeInvalid()
 		return nil
 	}
