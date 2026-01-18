@@ -191,13 +191,21 @@ func (e *Editor) Layout(gtx layout.Context, lt *text.Shaper) layout.Dimensions {
 
 			dims := layout.Inset{Right: max(0, e.lineNumberGutterGap)}.Layout(gtx,
 				func(gtx layout.Context) layout.Dimensions {
-					var lineNumberColor color.Color
+					var lineNumberColor, lineNumberColor2, lineColor color.Color
 					if e.colorPalette.LineNumberColor.IsSet() {
 						lineNumberColor = e.colorPalette.LineNumberColor
 					} else {
 						lineNumberColor = color.Color{}.MulAlpha(255)
 					}
-					return e.text.PaintLineNumber(gtx, lt, lineNumberColor.Op(gtx.Ops))
+					lineNumberColor2 = lineNumberColor.MulAlpha(0x90)
+
+					if e.colorPalette.LineColor.IsSet() {
+						lineColor = e.colorPalette.LineColor
+					} else {
+						lineColor = e.colorPalette.Foreground.MulAlpha(0x30)
+					}
+
+					return e.text.PaintLineNumber(gtx, lt, lineNumberColor2.Op(gtx.Ops), lineNumberColor.Op(gtx.Ops), lineColor.Op(gtx.Ops))
 				})
 			e.gutterWidth = dims.Size.X
 			return dims
@@ -243,25 +251,18 @@ func (e *Editor) layout(gtx layout.Context) layout.Dimensions {
 		panic("No color palette is set!")
 	}
 
-	textMaterial := color.Color{}
-	var selectColor, lineColor color.Color
+	var textColor, selectColor color.Color
 	if e.colorPalette.Foreground.IsSet() {
-		textMaterial = e.colorPalette.Foreground
+		textColor = e.colorPalette.Foreground
 	}
 	if e.colorPalette.SelectColor.IsSet() {
 		selectColor = e.colorPalette.SelectColor
 	} else {
-		selectColor = textMaterial.MulAlpha(0x60)
-	}
-	if e.colorPalette.LineColor.IsSet() {
-		lineColor = e.colorPalette.LineColor
-	} else {
-		lineColor = textMaterial.MulAlpha(0x30)
+		selectColor = textColor.MulAlpha(0x60)
 	}
 
 	if e.Len() > 0 {
 		e.paintSelection(gtx, selectColor)
-		e.paintLineHighlight(gtx, lineColor)
 		e.text.HighlightMatchingBrackets(gtx, selectColor.Op(gtx.Ops))
 		if e.wordHighlighter.IsDirty() {
 			e.wordHighlighter.HighlightAtCaret(e.colorPalette.SelectColor)
@@ -270,10 +271,10 @@ func (e *Editor) layout(gtx layout.Context) layout.Dimensions {
 			e.selectionHighlighter.HighlightSelection(e.colorPalette.SelectColor)
 		}
 
-		e.paintText(gtx, textMaterial)
+		e.paintText(gtx, textColor)
 	}
 	if gtx.Enabled() {
-		e.paintCaret(gtx, textMaterial)
+		e.paintCaret(gtx, textColor)
 	}
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
@@ -306,11 +307,6 @@ func (e *Editor) paintCaret(gtx layout.Context, material color.Color) {
 		return
 	}
 	e.text.PaintCaret(gtx, material.Op(gtx.Ops))
-}
-
-func (e *Editor) paintLineHighlight(gtx layout.Context, material color.Color) {
-	e.initBuffer()
-	e.text.PaintLineHighlight(gtx, material.Op(gtx.Ops))
 }
 
 // Len is the length of the editor contents, in runes.

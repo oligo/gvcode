@@ -54,9 +54,9 @@ func (e *TextView) ConvertPos(line, col int) int {
 
 // selectedParagraphs returns the paragraphs that the carent selection covers.
 // If there's no selection, it returns the paragraph that the caret is in.
-func (e *TextView) selectedParagraphs() []lt.Paragraph {
+func (e *TextView) selectedParagraphs() (_ []lt.Paragraph, startIdx int) {
 	if len(e.layouter.Paragraphs) <= 0 {
-		return nil
+		return nil, 0
 	}
 
 	selections := make([]lt.Paragraph, 0)
@@ -64,14 +64,14 @@ func (e *TextView) selectedParagraphs() []lt.Paragraph {
 	caretStart := min(e.caret.start, e.caret.end)
 	caretEnd := max(e.caret.start, e.caret.end)
 
-	startIdx := sort.Search(len(e.layouter.Paragraphs), func(i int) bool {
+	startIdx = sort.Search(len(e.layouter.Paragraphs), func(i int) bool {
 		rng := e.layouter.Paragraphs[i]
 		return rng.EndY >= e.closestToRune(caretStart).Y
 	})
 
 	// No exsiting paragraph found.
 	if startIdx == len(e.layouter.Paragraphs) {
-		return selections
+		return selections, startIdx
 	}
 	selections = append(selections, e.layouter.Paragraphs[startIdx])
 
@@ -82,7 +82,7 @@ func (e *TextView) selectedParagraphs() []lt.Paragraph {
 		})
 
 		if endIdx == len(e.layouter.Paragraphs) {
-			return selections
+			return selections, startIdx
 		}
 
 		for i := startIdx + 1; i <= endIdx; i++ {
@@ -96,14 +96,14 @@ func (e *TextView) selectedParagraphs() []lt.Paragraph {
 		}
 	}
 
-	return selections
+	return selections, startIdx
 
 }
 
 // SelectedLineRange returns the start and end rune index of the paragraphs selected by the caret.
 // If there is no selection, the range of current paragraph the caret is in is returned.
 func (e *TextView) SelectedLineRange() (start, end int) {
-	paragraphs := e.selectedParagraphs()
+	paragraphs, _ := e.selectedParagraphs()
 	if len(paragraphs) == 0 {
 		return
 	}
@@ -115,7 +115,7 @@ func (e *TextView) SelectedLineRange() (start, end int) {
 // SelectedLine returns the text of the selected lines and the rune range. An empty selection is treated
 // as a single line selection.
 func (e *TextView) SelectedLineText(buf []byte) ([]byte, int, int) {
-	paragraphs := e.selectedParagraphs()
+	paragraphs, _ := e.selectedParagraphs()
 	if len(paragraphs) == 0 {
 		return buf[:0], 0, 0
 	}
@@ -140,7 +140,7 @@ func (e *TextView) PartialLineSelected() bool {
 		return false
 	}
 
-	paragraphs := e.selectedParagraphs()
+	paragraphs, _ := e.selectedParagraphs()
 	if len(paragraphs) > 1 {
 		return false
 	}

@@ -14,7 +14,9 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-func paintLineNumber(gtx layout.Context, shaper *text.Shaper, params text.Parameters, viewport image.Rectangle, paragraphs *[]lt.Paragraph, textMaterial op.CallOp) layout.Dimensions {
+func paintLineNumber(gtx layout.Context, shaper *text.Shaper, params text.Parameters,
+	viewport image.Rectangle, paragraphs *[]lt.Paragraph, currentPara int,
+	textMaterial, highlightTextMaterial op.CallOp) layout.Dimensions {
 	// inherit all other settings from the main text layout.
 	params.Alignment = text.End
 	params.MinWidth = 0
@@ -75,7 +77,11 @@ lineLoop:
 		// draw glyph
 		path := shaper.Shape(glyphs)
 		outline := clip.Outline{Path: path}.Op().Push(gtx.Ops)
-		textMaterial.Add(gtx.Ops)
+		if currentPara == i {
+			highlightTextMaterial.Add(gtx.Ops)
+		} else {
+			textMaterial.Add(gtx.Ops)
+		}
 		paint.PaintOp{}.Add(gtx.Ops)
 		outline.Pop()
 		trans.Pop()

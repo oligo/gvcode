@@ -151,11 +151,11 @@ func (e *TextView) HighlightMatchingBrackets(gtx layout.Context, material op.Cal
 
 // caretCurrentLine returns the current paragraph that the carent is in.
 // Only the start position is checked.
-func (e *TextView) caretCurrentLine() (start lt.CombinedPos, end lt.CombinedPos) {
+func (e *TextView) caretCurrentLine() (start lt.CombinedPos, end lt.CombinedPos, lineIndex int) {
 	caretStart := e.closestToRune(e.caret.start)
-	lines := e.selectedParagraphs()
+	lines, lineIndex := e.selectedParagraphs()
 	if len(lines) == 0 {
-		return caretStart, caretStart
+		return caretStart, caretStart, lineIndex
 	}
 
 	line := lines[0]
@@ -165,37 +165,35 @@ func (e *TextView) caretCurrentLine() (start lt.CombinedPos, end lt.CombinedPos)
 	return
 }
 
-// paintLineHighlight clips and paints the visible line that the caret is in when there is no
-// text selected.
-func (e *TextView) PaintLineHighlight(gtx layout.Context, material op.CallOp) {
-	if e.caret.start != e.caret.end {
-		return
+// PaintLineNumber paint the line numbers and hightlight current line. 
+// It clips and paints the visible line that the caret is in when there 
+// is no text selected.
+func (e *TextView) PaintLineNumber(gtx layout.Context, shaper *text.Shaper, textMaterial, highlightTextMaterial op.CallOp, lineColor op.CallOp) layout.Dimensions {
+	// highlight the selected lines.
+	currentLine := -1
+	if e.caret.start == e.caret.end {
+		start, end, lineIndex := e.caretCurrentLine()
+		if start != (lt.CombinedPos{}) || end != (lt.CombinedPos{}) {
+			currentLine = lineIndex
+			bounds := image.Rectangle{
+				Min: image.Point{X: 0, Y: start.Y - start.Ascent.Ceil()},
+				Max: image.Point{X: 1e6, Y: end.Y + end.Descent.Ceil()},
+			}.Sub(image.Point{Y: e.scrollOff.Y}) // fill the whole line.
+
+			area := clip.Rect(e.adjustPadding(bounds)).Push(gtx.Ops)
+			lineColor.Add(gtx.Ops)
+			paint.PaintOp{}.Add(gtx.Ops)
+			area.Pop()
+		}
 	}
 
-	start, end := e.caretCurrentLine()
-	if start == (lt.CombinedPos{}) || end == (lt.CombinedPos{}) {
-		return
-	}
-
-	bounds := image.Rectangle{
-		Min: image.Point{X: 0, Y: start.Y - start.Ascent.Ceil()},
-		Max: image.Point{X: gtx.Constraints.Max.X, Y: end.Y + end.Descent.Ceil()},
-	}.Sub(image.Point{Y: e.scrollOff.Y}) // fill the whole line.
-
-	area := clip.Rect(e.adjustPadding(bounds)).Push(gtx.Ops)
-	material.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	area.Pop()
-}
-
-func (e *TextView) PaintLineNumber(gtx layout.Context, lt *text.Shaper, material op.CallOp) layout.Dimensions {
 	m := op.Record(gtx.Ops)
 	viewport := image.Rectangle{
 		Min: e.scrollOff,
 		Max: e.viewSize.Add(e.scrollOff),
 	}
 
-	dims := paintLineNumber(gtx, lt, e.params, viewport, &e.layouter.Paragraphs, material)
+	dims := paintLineNumber(gtx, shaper, e.params, viewport, &e.layouter.Paragraphs, currentLine, textMaterial, highlightTextMaterial)
 	call := m.Stop()
 
 	rect := viewport.Sub(e.scrollOff)

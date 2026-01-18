@@ -13,7 +13,7 @@ import (
 // indented or dedented.
 func (e *TextView) IndentLines(dedent bool) int {
 	// 1. normal case: insert a TAB forward.
-	if selectedLines := e.selectedParagraphs(); !dedent && len(selectedLines) <= 1 {
+	if selectedLines, _ := e.selectedParagraphs(); !dedent && len(selectedLines) <= 1 {
 		// expand soft tab.
 		start, end := e.Selection()
 		moves := e.Replace(start, end, e.expandTab(start, end, "\t"))
