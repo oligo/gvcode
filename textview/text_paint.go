@@ -55,7 +55,11 @@ func (e *TextView) selectionPolygons(gtx layout.Context, regions []lt.Region) []
 	// Prepare rectangles with padding
 	rects := make([]image.Rectangle, len(regions))
 	for i, region := range regions {
-		rects[i] = region.Bounds
+		if i == 0 || i == len(regions)-1 {
+			rects[i] = e.adjustPadding(region.Bounds)
+		} else {
+			rects[i] = region.Bounds
+		}
 	}
 
 	expandEmptyRegion := len(regions) > 1
