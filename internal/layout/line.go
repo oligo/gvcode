@@ -46,32 +46,74 @@ func (li *Line) append(glyphs ...text.Glyph) {
 
 }
 
-// recompute re-compute xOff of the line and each glyph contained in the line,
-// and also update the runeOff to the right value.
-// For bidi text, we preserve the relative positions of glyphs (which are correct
-// from the shaper) and only apply the alignment offset.
+// recompute re-computes X position for Bidi text by processing runs of direction.
 func (li *Line) recompute(alignOff fixed.Int26_6, runeOff int) {
 	if len(li.Glyphs) == 0 {
 		li.RuneOff = runeOff
 		return
 	}
 
-	// Find the minimum X (leftmost visual position) of all glyphs.
-	// This serves as the origin for the line.
-	minX := li.Glyphs[0].X
-	for _, gl := range li.Glyphs {
-		if gl.X < minX {
-			minX = gl.X
-		}
-	}
+	// Tracks the start X of the current run relative to the line start
+	xOff := fixed.I(0)
+	// Index of the first glyph in the current run
+	runStart := 0
 
-	// Shift all glyphs so that the leftmost is at alignOff.
-	// This preserves the relative positioning (important for bidi text).
-	shift := alignOff - minX
-	for idx, gl := range li.Glyphs {
-		gl.X += shift
-		if idx == len(li.Glyphs)-1 {
-			gl.Flags |= text.FlagLineBreak
+	for i := 0; i <= len(li.Glyphs); i++ {
+		// Determine if the current run has ended (end of line or direction change)
+		endOfRun := false
+		if i == len(li.Glyphs) {
+			endOfRun = true
+		} else {
+			// Check if direction changes compared to the start of the run
+			// Gio uses FlagTowardOrigin to indicate RTL direction
+			currentDir := li.Glyphs[i].Flags & text.FlagTowardOrigin
+			startDir := li.Glyphs[runStart].Flags & text.FlagTowardOrigin
+			if currentDir != startDir {
+				endOfRun = true
+			}
+		}
+
+		if endOfRun {
+			// Calculate the total width of this specific run
+			runWidth := fixed.I(0)
+			for j := runStart; j < i; j++ {
+				runWidth += li.Glyphs[j].Advance
+			}
+
+			// Layout the glyphs within this run based on direction
+			isRTL := (li.Glyphs[runStart].Flags & text.FlagTowardOrigin) == text.FlagTowardOrigin
+
+			if isRTL {
+				// RTL Run: Layout Right-to-Left (assuming Logical Order input)
+				// The run occupies space from [xOff] to [xOff + runWidth]
+				// We start the cursor at the RIGHT edge and subtract advances.
+				cursor := alignOff + xOff + runWidth
+				for j := runStart; j < i; j++ {
+					cursor -= li.Glyphs[j].Advance
+					li.Glyphs[j].X = cursor
+
+					// Ensure the last glyph in the line gets the break flag
+					if j == len(li.Glyphs)-1 {
+						li.Glyphs[j].Flags |= text.FlagLineBreak
+					}
+				}
+			} else {
+				// LTR Run: Layout Left-to-Right
+				// We start the cursor at the LEFT edge (xOff) and add advances.
+				cursor := alignOff + xOff
+				for j := runStart; j < i; j++ {
+					li.Glyphs[j].X = cursor
+					cursor += li.Glyphs[j].Advance
+
+					if j == len(li.Glyphs)-1 {
+						li.Glyphs[j].Flags |= text.FlagLineBreak
+					}
+				}
+			}
+
+			// Advance the global line offset by the run's width
+			xOff += runWidth
+			runStart = i
 		}
 	}
 

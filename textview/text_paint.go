@@ -101,6 +101,10 @@ func (e *TextView) PaintOverlay(gtx layout.Context, offset image.Point, overlay 
 	dims := overlay(gtx)
 	call := macro.Stop()
 
+	if dims.Size == (image.Point{}) {
+		return
+	}
+
 	if offset.X+dims.Size.X-e.scrollOff.X > gtx.Constraints.Max.X {
 		offset.X = max(offset.X-dims.Size.X, 0)
 	}
@@ -190,8 +194,8 @@ func (e *TextView) caretCurrentLine() (start lt.CombinedPos, end lt.CombinedPos,
 	return
 }
 
-// PaintLineNumber paint the line numbers and hightlight current line. 
-// It clips and paints the visible line that the caret is in when there 
+// PaintLineNumber paint the line numbers and hightlight current line.
+// It clips and paints the visible line that the caret is in when there
 // is no text selected.
 func (e *TextView) PaintLineNumber(gtx layout.Context, shaper *text.Shaper, textMaterial, highlightTextMaterial op.CallOp, lineColor op.CallOp) layout.Dimensions {
 	// highlight the selected lines.
