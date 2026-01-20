@@ -2,7 +2,6 @@ package gutter
 
 import (
 	"image"
-	"log"
 	"sort"
 
 	"gioui.org/gesture"
@@ -171,8 +170,6 @@ func (m *Manager) handleClick(gtx layout.Context, evt gesture.ClickEvent) {
 			if line < 0 {
 				continue
 			}
-
-			log.Println("line was clicked: ", line)
 
 			// Check if provider is interactive
 			if interactive, ok := p.(InteractiveGutter); ok {
