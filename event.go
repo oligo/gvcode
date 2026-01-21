@@ -29,6 +29,9 @@ func (e *Editor) processEvents(gtx layout.Context) (ev EditorEvent, ok bool) {
 	defer func() {
 		afterSelStart, afterSelEnd := e.Selection()
 		if selStart != afterSelStart || selEnd != afterSelEnd {
+			// Selection changed - mark word highlighter active regardless
+			// of whether SelectEvent is returned now or queued for later
+			e.wordHighlighter.MarkActive(true)
 			if ok {
 				e.pending = append(e.pending, SelectEvent{})
 			} else {
@@ -40,8 +43,6 @@ func (e *Editor) processEvents(gtx layout.Context) (ev EditorEvent, ok bool) {
 		switch ev.(type) {
 		case ChangeEvent:
 			e.wordHighlighter.MarkActive(false)
-		case SelectEvent:
-			e.wordHighlighter.MarkActive(true)
 		}
 	}()
 
