@@ -220,7 +220,7 @@ func (e *TextView) FindAllTextOccurrences(start, end int) [][2]int {
 	if start == end {
 		return nil
 	}
-	
+
 	if start > end {
 		start, end = end, start
 	}

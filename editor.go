@@ -78,6 +78,31 @@ type Editor struct {
 	wordHighlighter wordHighlighter
 	// selection highlighting state
 	selectionHighlighter selectionHighlighter
+	// column edit mode state
+	columnEdit columnEditState
+}
+
+// columnEditState tracks state for column/vertical editing mode
+type columnEditState struct {
+	// enabled indicates whether column editing mode is active
+	enabled bool
+	// selections holds multiple cursor positions for column editing
+	// each cursor represents a position on a different line
+	selections []columnCursor
+	// anchor stores the initial mouse position when starting a column selection
+	anchor image.Point
+}
+
+// columnCursor represents a cursor position for column editing
+type columnCursor struct {
+	// line is the line number (0-based)
+	line int
+	// col is the column position (in runes, 0-based)
+	col int
+	// startX is the pixel X coordinate of this cursor
+	startX int
+	// endX is the pixel X coordinate of the selection end (if different from startX)
+	endX int
 }
 
 type imeState struct {
@@ -277,6 +302,12 @@ func (e *Editor) layout(gtx layout.Context) layout.Dimensions {
 
 		e.paintText(gtx, textColor)
 	}
+
+	// Paint column selection if active
+	if e.ColumnEditEnabled() && len(e.columnEdit.selections) > 0 {
+		e.paintColumnSelection(gtx, selectColor)
+	}
+
 	if gtx.Enabled() {
 		e.paintCaret(gtx, textColor)
 	}
@@ -311,6 +342,40 @@ func (e *Editor) paintCaret(gtx layout.Context, material color.Color) {
 		return
 	}
 	e.text.PaintCaret(gtx, material.Op(gtx.Ops))
+}
+
+// paintColumnSelection paints the column selection rectangles for column editing mode
+func (e *Editor) paintColumnSelection(gtx layout.Context, material color.Color) {
+	e.initBuffer()
+
+	lineHeight := e.text.GetLineHeight().Round()
+	scrollOff := e.text.ScrollOff()
+
+	for _, cursor := range e.columnEdit.selections {
+		// Calculate screen position for this line
+		lineY := cursor.line * lineHeight
+		screenY := lineY - scrollOff.Y
+
+		// Only draw if visible
+		if screenY < -lineHeight || screenY > gtx.Constraints.Max.Y {
+			continue
+		}
+
+		// Draw selection rectangle from startX to endX
+		startX := cursor.startX - scrollOff.X
+		endX := cursor.endX - scrollOff.X
+
+		width := endX - startX
+		if width <= 0 {
+			width = 2 // Minimum visible width for cursor
+		}
+
+		// Draw the selection rectangle
+		material.Op(gtx.Ops).Add(gtx.Ops)
+		stack := clip.Rect(image.Rect(startX, screenY, startX+width, screenY+lineHeight)).Push(gtx.Ops)
+		paint.PaintOp{}.Add(gtx.Ops)
+		stack.Pop()
+	}
 }
 
 // Len is the length of the editor contents, in runes.
@@ -394,6 +459,11 @@ func (e *Editor) Delete(graphemeClusters int) (deletedRunes int) {
 	e.initBuffer()
 	if graphemeClusters == 0 {
 		return 0
+	}
+
+	// Handle column editing mode
+	if e.ColumnEditEnabled() && len(e.columnEdit.selections) > 0 {
+		return e.onColumnEditDelete(graphemeClusters)
 	}
 
 	if graphemeClusters < 0 {
@@ -756,6 +826,80 @@ func sign(n int) int {
 	default:
 		return 0
 	}
+}
+
+// onColumnEditDelete handles delete operations in column editing mode
+func (e *Editor) onColumnEditDelete(graphemeClusters int) (deletedRunes int) {
+	if len(e.columnEdit.selections) == 0 {
+		println("[ColumnEdit] onColumnEditDelete called but no selections exist")
+		return 0
+	}
+
+	println("[ColumnEdit] onColumnEditDelete - deleting", graphemeClusters, "grapheme clusters from", len(e.columnEdit.selections), "positions")
+
+	// Group operations for undo
+	e.buffer.GroupOp()
+
+	// Delete at each column cursor position
+	for i := range e.columnEdit.selections {
+		cursor := &e.columnEdit.selections[i]
+
+		// Calculate the rune offset for this position
+		runeOff, _ := e.ConvertPos(cursor.line, cursor.col)
+		println("[ColumnEdit] Deleting at line:", cursor.line, "col:", cursor.col, "runeOff:", runeOff)
+
+		// Determine the range to delete
+		start := runeOff
+		end := runeOff
+
+		if graphemeClusters > 0 {
+			// Delete forward
+			end = runeOff + graphemeClusters
+		} else {
+			// Delete backward
+			start = runeOff + graphemeClusters
+		}
+
+		// Clamp to valid range
+		if start < 0 {
+			start = 0
+		}
+		if end > e.Len() {
+			end = e.Len()
+		}
+
+		if start != end {
+			// Delete the text at this position
+			deleted := end - start
+			e.replace(start, end, "")
+			deletedRunes += deleted
+			println("[ColumnEdit] Deleted", deleted, "runes from line:", cursor.line)
+
+			// Adjust other cursor positions to account for deletion
+			for j := i + 1; j < len(e.columnEdit.selections); j++ {
+				if e.columnEdit.selections[j].line > cursor.line {
+					// Adjust cursor position for lines below
+					break
+				}
+			}
+
+			// Move the cursor back if we deleted backward
+			if graphemeClusters < 0 {
+				cursor.col += graphemeClusters
+				if cursor.col < 0 {
+					cursor.col = 0
+				}
+			}
+		}
+	}
+
+	e.buffer.UnGroupOp()
+	println("[ColumnEdit] onColumnEditDelete completed, total deleted:", deletedRunes)
+
+	e.scrollCaret = true
+	e.scroller.Stop()
+	e.text.MoveCaret(0, 0)
+	return deletedRunes
 }
 
 func (s ChangeEvent) isEditorEvent()        {}

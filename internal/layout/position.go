@@ -21,11 +21,11 @@ type ScreenPos struct {
 // CombinedPos is a point in the editor.
 type CombinedPos struct {
 	// runes is the offset in runes.
-	Runes int
+	Runes   int
 	LineCol ScreenPos
 	// Pixel coordinates
-	X fixed.Int26_6
-	Y int
+	X               fixed.Int26_6
+	Y               int
 	Ascent, Descent fixed.Int26_6
 
 	// RunIndex tracks which run this position is within, counted each time

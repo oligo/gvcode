@@ -3,6 +3,7 @@ package gvcode
 import (
 	"image"
 	"io"
+	"log"
 	"math"
 	"strings"
 	"unicode"
@@ -131,6 +132,38 @@ func (e *Editor) processPointerEvent(gtx layout.Context, ev event.Event) (Editor
 		switch {
 		case evt.Kind == gesture.KindPress && evt.Source == pointer.Mouse,
 			evt.Kind == gesture.KindClick && evt.Source != pointer.Mouse:
+			// Debug log for mouse click
+			println("[ColumnEdit] Mouse click detected, Modifiers:", evt.Modifiers, "HasAlt:", evt.Modifiers.Contain(key.ModAlt), "NumClicks:", evt.NumClicks, "ColumnEditEnabled:", e.ColumnEditEnabled())
+
+			// Calculate click position
+			pos := image.Point{
+				X: int(math.Round(float64(evt.Position.X))),
+				Y: int(math.Round(float64(evt.Position.Y))),
+			}
+
+			// Handle column selection
+			if e.ColumnEditEnabled() {
+				// Check if we already have an active column selection
+				// If yes, don't restart - let the drag handler update it
+				if len(e.columnEdit.selections) == 0 {
+					println("[ColumnEdit] Column edit mode active, starting column selection")
+					e.startColumnSelection(gtx, pos)
+					e.dragging = true // Set dragging flag for column mode
+				} else {
+					println("[ColumnEdit] Column edit mode active, existing selections, skipping restart")
+					e.dragging = true
+				}
+				return nil, true
+			}
+
+			// Check for Alt+Click to start column selection (when column edit mode is not yet enabled)
+			if evt.Modifiers.Contain(key.ModAlt) {
+				println("[ColumnEdit] Alt+Click detected, starting column selection")
+				e.startColumnSelection(gtx, pos)
+				e.dragging = true
+				return nil, true
+			}
+
 			prevCaretPos, _ := e.text.Selection()
 			e.blinkStart = gtx.Now
 			e.text.MoveCoord(image.Point{
@@ -184,7 +217,16 @@ func (e *Editor) processPointerEvent(gtx layout.Context, ev event.Event) (Editor
 			release = true
 			fallthrough
 		case evt.Kind == pointer.Drag && evt.Source == pointer.Mouse:
-			if e.dragging {
+			// Handle column selection drag
+			if e.ColumnEditEnabled() && e.dragging {
+				e.updateColumnSelection(gtx, image.Point{
+					X: int(math.Round(float64(evt.Position.X))),
+					Y: int(math.Round(float64(evt.Position.Y))),
+				})
+				if release {
+					e.dragging = false
+				}
+			} else if e.dragging {
 				e.blinkStart = gtx.Now
 				e.text.MoveCoord(image.Point{
 					X: int(math.Round(float64(evt.Position.X))),
@@ -371,6 +413,13 @@ func (e *Editor) onTab(k key.Event) EditorEvent {
 
 func (e *Editor) onTextInput(ke key.EditEvent) {
 	if e.mode == ModeReadOnly || len(ke.Text) <= 0 {
+		return
+	}
+
+	// Handle column editing mode
+	if e.ColumnEditEnabled() && len(e.columnEdit.selections) > 0 {
+		println("[ColumnEdit] onTextInput - Column edit mode active, inserting:", ke.Text, "into", len(e.columnEdit.selections), "positions")
+		e.onColumnEditInput(ke)
 		return
 	}
 
@@ -604,4 +653,160 @@ func (e *Editor) onDeleteBackward() {
 		}
 	}
 
+}
+
+// startColumnSelection initiates column selection mode from the given position
+func (e *Editor) startColumnSelection(gtx layout.Context, pos image.Point) {
+	log.Println("[ColumnEdit] startColumnSelection called at pos:", pos)
+	e.blinkStart = gtx.Now
+	e.SetColumnEditMode(true)
+	println("[ColumnEdit] Column edit mode enabled, mode is now:", e.mode)
+
+	// Store the anchor position
+	e.columnEdit.anchor = pos
+	log.Println("[ColumnEdit] Anchor set to:", pos)
+
+	// Get the line and column at the anchor position
+	line, col, runeOff := e.text.QueryPos(pos)
+	println("[ColumnEdit] Queried position - line:", line, "col:", col, "runeOff:", runeOff)
+
+	if runeOff >= 0 {
+		e.columnEdit.selections = []columnCursor{
+			{
+				line:   line,
+				col:    col,
+				startX: pos.X,
+				endX:   pos.X,
+			},
+		}
+		e.scrollCaret = true
+		println("[ColumnEdit] Created initial column selection for line:", line, "col:", col)
+	}
+
+	gtx.Execute(key.FocusCmd{Tag: e})
+	if e.completor != nil {
+		e.completor.Cancel()
+	}
+	println("[ColumnEdit] startColumnSelection completed")
+}
+
+// updateColumnSelection updates the column selection based on current mouse position
+func (e *Editor) updateColumnSelection(gtx layout.Context, pos image.Point) {
+	e.blinkStart = gtx.Now
+
+	if len(e.columnEdit.selections) == 0 {
+		println("[ColumnEdit] updateColumnSelection called but no selections exist")
+		return
+	}
+
+	anchor := e.columnEdit.anchor
+	log.Println("[ColumnEdit] updateColumnSelection - anchor:", anchor, "current:", pos)
+
+	// Determine the selection range in screen coordinates
+	startX := min(anchor.X, pos.X)
+	endX := max(anchor.X, pos.X)
+	startY := min(anchor.Y, pos.Y)
+	endY := max(anchor.Y, pos.Y)
+	println("[ColumnEdit] Selection range - X:", startX, "to", endX, "Y:", startY, "to", endY)
+
+	// Clear current selections
+	e.columnEdit.selections = nil
+
+	// Get line height and scroll offset
+	// fixed.Int26_6 needs to be rounded to get integer pixels
+	lineHeight := e.text.GetLineHeight().Round()
+	scrollOff := e.text.ScrollOff()
+	log.Println("[ColumnEdit] lineHeight:", lineHeight, "scrollOff:", scrollOff)
+
+	// Calculate line numbers from screen Y coordinates
+	// Screen Y = LineNum * lineHeight - scrollOff.Y
+	// LineNum = (ScreenY + scrollOff.Y) / lineHeight
+	startLine := (startY + scrollOff.Y) / lineHeight
+	endLine := (endY + scrollOff.Y) / lineHeight
+	println("[ColumnEdit] Line range:", startLine, "to", endLine)
+
+	selectionCount := 0
+	totalLines := e.text.Paragraphs()
+
+	// Iterate through each line in the range
+	for lineNum := startLine; lineNum <= endLine; lineNum++ {
+		// Skip lines beyond document bounds
+		if lineNum < 0 || lineNum >= totalLines {
+			continue
+		}
+
+		// Calculate screen Y for this line
+		screenY := lineNum*lineHeight - scrollOff.Y
+
+		// Query the start and end column positions on this line
+		startPos := image.Point{X: startX, Y: screenY}
+		endPos := image.Point{X: endX, Y: screenY}
+
+		// Get column at start X position
+		_, startCol, startOff := e.text.QueryPos(startPos)
+		// Get column at end X position (unused but kept for clarity)
+		_, _, endOff := e.text.QueryPos(endPos)
+
+		// Ensure we have valid positions
+		if startOff < 0 || endOff < 0 {
+			// If QueryPos failed, try to use line-based calculation
+			if startOff < 0 {
+				startCol = 0
+			}
+			if endOff < 0 {
+				// No action needed since endCol is not used
+			}
+		}
+
+		// Use the smaller column for consistency
+		col := startCol
+
+		e.columnEdit.selections = append(e.columnEdit.selections, columnCursor{
+			line:   lineNum,
+			col:    col,
+			startX: startX,
+			endX:   endX,
+		})
+		selectionCount++
+	}
+
+	println("[ColumnEdit] Created", selectionCount, "column selections")
+	e.scrollCaret = true
+}
+
+// onColumnEditInput handles text input in column editing mode
+func (e *Editor) onColumnEditInput(ke key.EditEvent) {
+	if len(e.columnEdit.selections) == 0 {
+		println("[ColumnEdit] onColumnEditInput called but no selections exist")
+		return
+	}
+
+	textToInsert := ke.Text
+	println("[ColumnEdit] onColumnEditInput - inserting:", textToInsert, "into", len(e.columnEdit.selections), "cursor positions")
+
+	// Group operations for undo
+	e.buffer.GroupOp()
+
+	// Insert text at each column cursor position
+	for i := range e.columnEdit.selections {
+		cursor := &e.columnEdit.selections[i]
+
+		// Calculate the rune offset for this position
+		runeOff, _ := e.ConvertPos(cursor.line, cursor.col)
+		println("[ColumnEdit] Inserting at line:", cursor.line, "col:", cursor.col, "runeOff:", runeOff)
+
+		// Insert the text at this position
+		e.replace(runeOff, runeOff, textToInsert)
+
+		// Update cursor position after insertion
+		cursor.col += utf8.RuneCountInString(textToInsert)
+	}
+
+	e.buffer.UnGroupOp()
+	println("[ColumnEdit] onColumnEditInput completed")
+
+	e.scrollCaret = true
+	e.scroller.Stop()
+	e.text.MoveCaret(0, 0)
+	e.lastInput = &ke
 }

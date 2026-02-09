@@ -316,6 +316,38 @@ func (e *Editor) buildBuiltinCommands() {
 			return nil
 		})
 
+	// ESC key exits column editing mode
+	registerCommand(key.Filter{Focus: e, Name: key.NameEscape},
+		func(gtx layout.Context, evt key.Event) EditorEvent {
+			// Debug log for ESC key
+			println("[ColumnEdit] ESC key pressed, ColumnEditEnabled:", e.ColumnEditEnabled())
+			if e.ColumnEditEnabled() {
+				e.clearColumnEdit()
+				e.ClearSelection()
+				println("[ColumnEdit] Exited column editing mode")
+			}
+			return nil
+		})
+
+	// Alt+C toggles column editing mode
+	registerCommand(key.Filter{Focus: e, Name: "C", Required: key.ModAlt},
+		func(gtx layout.Context, evt key.Event) EditorEvent {
+			// Debug log for Alt+C
+			println("[ColumnEdit] Alt+C pressed, current mode:", e.mode, "ReadOnly:", e.mode == ModeReadOnly)
+			if e.mode != ModeReadOnly {
+				wasEnabled := e.ColumnEditEnabled()
+				e.SetColumnEditMode(!wasEnabled)
+				isEnabled := e.ColumnEditEnabled()
+				println("[ColumnEdit] Toggled column editing mode - was:", wasEnabled, "now:", isEnabled)
+				if !isEnabled {
+					e.ClearSelection()
+				}
+			} else {
+				println("[ColumnEdit] Cannot enable column edit in ReadOnly mode")
+			}
+			return nil
+		})
+
 }
 
 func (e *Editor) processCommands(gtx layout.Context) EditorEvent {

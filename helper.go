@@ -47,14 +47,14 @@ func GuessIndentation(text string) (TabStyle, bool, int) {
 		return false
 	}
 
-	for  {
+	for {
 		hasMore := indentScanner(100)
-		if (tabs + spaces<=5 || spaces == tabs) && hasMore {
+		if (tabs+spaces <= 5 || spaces == tabs) && hasMore {
 			continue
 		}
 
-		mixedIndent := tabs>0 && spaces>0
-		mainIndent := Tabs 
+		mixedIndent := tabs > 0 && spaces > 0
+		mainIndent := Tabs
 		if tabs > spaces {
 			mainIndent = Tabs
 		} else if spaces > tabs {
@@ -69,6 +69,6 @@ func GuessIndentation(text string) (TabStyle, bool, int) {
 			}
 		}
 
-		return mainIndent, mixedIndent, bestWidth		
+		return mainIndent, mixedIndent, bestWidth
 	}
 }

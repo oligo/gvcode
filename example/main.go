@@ -204,7 +204,6 @@ func main() {
 	)
 	editorApp.state.WithOptions(gvcode.WithDefaultGutters(), gvcode.WithGutterGap(unit.Dp(12)))
 
-
 	tokens := HightlightTextByPattern(editorApp.state.Text(), syntaxPattern)
 	editorApp.state.SetSyntaxTokens(tokens...)
 

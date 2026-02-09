@@ -22,6 +22,11 @@ const (
 	//
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#snippet_syntax.
 	ModeSnippet
+
+	// ModeColumnEdit enables column (vertical) selection mode, similar to
+	// GoLand, VS Code, and other modern editors. Users can select a rectangular
+	// block of text across multiple lines and edit them simultaneously.
+	ModeColumnEdit
 )
 
 func (e *Editor) setMode(mode EditorMode) {
@@ -31,7 +36,39 @@ func (e *Editor) setMode(mode EditorMode) {
 			e.snippetCtx.Cancel()
 			e.snippetCtx = nil
 		}
+		// Disable column editing when exiting column edit mode
+		if e.mode == ModeColumnEdit && mode != ModeColumnEdit {
+			e.clearColumnEdit()
+		}
 	}
 
 	e.mode = mode
+}
+
+// SetColumnEditMode enables or disables column editing mode
+func (e *Editor) SetColumnEditMode(enabled bool) {
+	println("[ColumnEdit] SetColumnEditMode called with enabled:", enabled, "current mode:", e.mode)
+	if enabled {
+		e.mode = ModeColumnEdit
+		e.columnEdit.enabled = true
+		println("[ColumnEdit] Column editing mode enabled")
+	} else {
+		e.clearColumnEdit()
+	}
+}
+
+// clearColumnEdit clears all column selections and disables column edit mode
+func (e *Editor) clearColumnEdit() {
+	println("[ColumnEdit] clearColumnEdit called, clearing", len(e.columnEdit.selections), "selections")
+	e.columnEdit.enabled = false
+	e.columnEdit.selections = nil
+	if e.mode == ModeColumnEdit {
+		e.mode = ModeNormal
+		println("[ColumnEdit] Column editing mode disabled")
+	}
+}
+
+// ColumnEditEnabled returns whether column editing mode is active
+func (e *Editor) ColumnEditEnabled() bool {
+	return e.columnEdit.enabled || e.mode == ModeColumnEdit
 }

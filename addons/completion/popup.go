@@ -46,13 +46,13 @@ var kindStyles = map[string]kindStyle{
 	"constructor": {Icon: "fn", Color: kindColorBlue},
 
 	// Variables and fields
-	"variable": {Icon: "ab", Color: kindColorCyan},
-	"var":      {Icon: "ab", Color: kindColorCyan},
-	"field":    {Icon: "fd", Color: kindColorCyan},
-	"property": {Icon: "fd", Color: kindColorCyan},
-	"prop":     {Icon: "fd", Color: kindColorCyan},
-	"param":    {Icon: "ab", Color: kindColorCyan},
-	"parameter":{Icon: "ab", Color: kindColorCyan},
+	"variable":  {Icon: "ab", Color: kindColorCyan},
+	"var":       {Icon: "ab", Color: kindColorCyan},
+	"field":     {Icon: "fd", Color: kindColorCyan},
+	"property":  {Icon: "fd", Color: kindColorCyan},
+	"prop":      {Icon: "fd", Color: kindColorCyan},
+	"param":     {Icon: "ab", Color: kindColorCyan},
+	"parameter": {Icon: "ab", Color: kindColorCyan},
 
 	// Types and classes
 	"class":     {Icon: "C", Color: kindColorYellow},
@@ -89,10 +89,10 @@ var kindStyles = map[string]kindStyle{
 	"ref":       {Icon: "rf", Color: kindColorGray},
 
 	// Special
-	"color":   {Icon: "co", Color: kindColorRed},
-	"event":   {Icon: "ev", Color: kindColorOrange},
-	"operator":{Icon: "op", Color: kindColorPurple},
-	"symbol":  {Icon: "sy", Color: kindColorCyan},
+	"color":    {Icon: "co", Color: kindColorRed},
+	"event":    {Icon: "ev", Color: kindColorOrange},
+	"operator": {Icon: "op", Color: kindColorPurple},
+	"symbol":   {Icon: "sy", Color: kindColorCyan},
 }
 
 var defaultKindStyle = kindStyle{Icon: "??", Color: kindColorGray}

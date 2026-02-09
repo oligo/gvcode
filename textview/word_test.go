@@ -96,33 +96,33 @@ func TestFindAllTextOccurrences(t *testing.T) {
 		expected [][2]int
 	}{
 		{
-			doc:   "hello world hello hello world",
-			start: 0,
-			end:   5, // "hello"
+			doc:      "hello world hello hello world",
+			start:    0,
+			end:      5, // "hello"
 			expected: [][2]int{{0, 5}, {12, 17}, {18, 23}},
 		},
 		{
-			doc:   "hello world hello hello world",
-			start: 6,
-			end:   11, // "world"
+			doc:      "hello world hello hello world",
+			start:    6,
+			end:      11, // "world"
 			expected: [][2]int{{6, 11}, {24, 29}},
 		},
 		{
-			doc:   "hello world hello hello world",
-			start: 0,
-			end:   0, // empty selection
+			doc:      "hello world hello hello world",
+			start:    0,
+			end:      0, // empty selection
 			expected: nil,
 		},
 		{
-			doc:   "hello world hello hello world",
-			start: 0,
-			end:   3, // "hel"
+			doc:      "hello world hello hello world",
+			start:    0,
+			end:      3, // "hel"
 			expected: [][2]int{{0, 3}, {12, 15}, {18, 21}},
 		},
 		{
-			doc:   "aaaaaa",
-			start: 0,
-			end:   3, // "aaa"
+			doc:      "aaaaaa",
+			start:    0,
+			end:      3, // "aaa"
 			expected: [][2]int{{0, 3}, {3, 6}},
 		},
 	}
@@ -168,38 +168,38 @@ func TestFindAllWordOccurrences(t *testing.T) {
 		expected [][2]int
 	}{
 		{
-			doc:   "hello world hello hello world",
-			start: 0,
-			end:   5, // "hello"
-			bySpace: false,
+			doc:      "hello world hello hello world",
+			start:    0,
+			end:      5, // "hello"
+			bySpace:  false,
 			expected: [][2]int{{0, 5}, {12, 17}, {18, 23}},
 		},
 		{
-			doc:   "hello world hello hello world",
-			start: 6,
-			end:   11, // "world"
-			bySpace: false,
+			doc:      "hello world hello hello world",
+			start:    6,
+			end:      11, // "world"
+			bySpace:  false,
 			expected: [][2]int{{6, 11}, {24, 29}},
 		},
 		{
-			doc:   "hello.world.hello.hello.world",
-			start: 0,
-			end:   5, // "hello"
-			bySpace: false,
+			doc:      "hello.world.hello.hello.world",
+			start:    0,
+			end:      5, // "hello"
+			bySpace:  false,
 			expected: [][2]int{{0, 5}, {12, 17}, {18, 23}},
 		},
 		{
-			doc:   "hello world",
-			start: 0,
-			end:   0, // empty selection
-			bySpace: false,
+			doc:      "hello world",
+			start:    0,
+			end:      0, // empty selection
+			bySpace:  false,
 			expected: nil,
 		},
 		{
-			doc:   "  hello  world  hello  ",
-			start: 2,
-			end:   7, // "hello"
-			bySpace: true,
+			doc:      "  hello  world  hello  ",
+			start:    2,
+			end:      7, // "hello"
+			bySpace:  true,
 			expected: [][2]int{{2, 7}, {16, 21}},
 		},
 	}

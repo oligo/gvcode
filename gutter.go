@@ -14,8 +14,6 @@ import (
 	"github.com/oligo/gvcode/internal/painter"
 )
 
-
-
 // GutterManager returns the editor's gutter manager, if one is configured.
 func (e *Editor) GutterManager() *gutter.Manager {
 	return e.gutterManager

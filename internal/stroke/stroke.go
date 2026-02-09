@@ -2,7 +2,7 @@
 
 // Package stroke converts complex strokes to gioui.org/op/clip operations.
 //
-// This is copied from https://github.com/gioui/gio-x/blob/main/stroke/stroke.go. 
+// This is copied from https://github.com/gioui/gio-x/blob/main/stroke/stroke.go.
 package stroke
 
 import (
