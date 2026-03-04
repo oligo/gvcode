@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -50,18 +51,40 @@ func NewGitDiff(filePath string) *GitDiff {
 
 }
 
-// ParseGitDiff runs git diff on the given file and parses the output into DiffHunks.
-func (d *GitDiff) ParseDiff() []*providers.DiffHunk {
+// ParseDiffContent diffs the given buffer content against the HEAD version
+// of the file, without requiring the buffer to be saved to disk first.
+func (d *GitDiff) ParseDiff(content []byte) []*providers.DiffHunk {
 	if d == nil {
 		return nil
 	}
 
-	// Run git diff
-	cmd := exec.Command("git", "diff", "--no-color", "-U0", "--", d.filename)
+	// Get the HEAD version so diffs persist after staging.
+	cmd := exec.Command("git", "show", "HEAD:./"+d.filename)
 	cmd.Dir = d.dir
-	output, err := cmd.Output()
+	original, err := cmd.Output()
 	if err != nil {
-		// git diff returns exit code 1 if there are changes, which is not an error
+		// File might not be committed yet (new file). Treat as empty base.
+		original = nil
+	}
+
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil
+	}
+
+	go func() {
+		pw.Write(original)
+		pw.Close()
+	}()
+
+	cmd = exec.Command("git", "diff", "--no-color", "-U0", "--no-index", "--", "/dev/fd/3", "-")
+	cmd.Dir = d.dir
+	cmd.Stdin = bytes.NewReader(content)
+	cmd.ExtraFiles = []*os.File{pr} // fd 3
+	output, err := cmd.Output()
+	pr.Close()
+
+	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if len(exitErr.Stderr) > 0 {
 				log.Printf("git diff stderr: %s", exitErr.Stderr)

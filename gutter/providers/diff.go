@@ -88,7 +88,7 @@ type VCSDiffProvider struct {
 
 // NewGitDiffProvider creates a new git diff provider with default colors.
 func NewVCSDiffProvider() *VCSDiffProvider {
-	addedColor, _ := gvcolor.Hex2Color("#46ca65")      // Green
+	addedColor, _ := gvcolor.Hex2Color("#3bb056")      // Green
 	modifiedColor, _ := gvcolor.Hex2Color("#d6a22a97") // Yellow/Orange
 	deletedColor, _ := gvcolor.Hex2Color("#e5534b")    // Red
 
@@ -284,9 +284,9 @@ func (p *VCSDiffProvider) drawDeletedMarker(gtx layout.Context, para gutter.Para
 
 	var path clip.Path
 	path.Begin(gtx.Ops)
-	path.MoveTo(f32.Point{X: 0, Y: y - triangleSize/2})
+	path.MoveTo(f32.Point{X: 0, Y: y - triangleSize})
 	path.LineTo(f32.Point{X: triangleSize, Y: y})
-	path.LineTo(f32.Point{X: 0, Y: y + triangleSize/2})
+	path.LineTo(f32.Point{X: 0, Y: y + triangleSize})
 	path.Close()
 
 	stack := clip.Outline{Path: path.End()}.Op().Push(gtx.Ops)
