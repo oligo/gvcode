@@ -183,16 +183,11 @@ func (d *DecorationTree) Insert(decos ...Decoration) error {
 
 // Query returns all styles at a given character offset
 func (d *DecorationTree) Query(pos int) []Decoration {
-	all, _ := d.tree.AllIntersections(pos, pos+1)
-	for _, deco := range d.emptyDecos {
-		if deco.Start == pos {
-			all = append(all, deco)
-		}
-	}
-	return all
+	return d.QueryRange(pos, pos+1)
 }
 
-// QueryRange returns all segments overlapping the range
+// QueryRange returns all segments overlapping the range, the query
+// applies a half-open range, with start inlcusive and end exclusive.
 func (d *DecorationTree) QueryRange(start, end int) []Decoration {
 	if start > end {
 		return nil
@@ -204,7 +199,13 @@ func (d *DecorationTree) QueryRange(start, end int) []Decoration {
 			all = append(all, deco)
 		}
 	}
-	return all
+
+	// AllIntersections uses inclusive boundaries, but our range uses exclusive end.
+	// Remove decorations that don't overlap: either ends at or before start,
+	// or starts at or after end.
+	return slices.DeleteFunc(all, func(deco Decoration) bool {
+		return deco.End <= start || deco.Start >= end
+	})
 }
 
 func (d *DecorationTree) RemoveBySource(source string) error {
