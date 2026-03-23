@@ -6,6 +6,7 @@ import (
 
 	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -87,9 +88,6 @@ type DiffPopup struct {
 	// Hunk is the diff hunk to display.
 	Hunk *providers.DiffHunk
 
-	// Theme is used for text rendering.
-	Theme *material.Theme
-
 	// Colors defines the color scheme.
 	Colors PopupColors
 
@@ -99,11 +97,11 @@ type DiffPopup struct {
 	// ShowStageButton controls whether to show the stage button.
 	ShowStageButton bool
 
-	// MaxWidth is the maximum width of the popup.
-	MaxWidth unit.Dp
-
 	// MaxHeight is the maximum height of the popup.
 	MaxHeight unit.Dp
+
+	// popupLine is the line where the diff popup should appear
+	popupLine int
 
 	// buttons
 	revertBtn widget.Clickable
@@ -115,14 +113,13 @@ type DiffPopup struct {
 }
 
 // NewDiffPopup creates a new diff popup for the given hunk.
-func NewDiffPopup(hunk *providers.DiffHunk, th *material.Theme) *DiffPopup {
+func NewDiffPopup(hunk *providers.DiffHunk, textSize unit.Sp, popupLine int) *DiffPopup {
 	return &DiffPopup{
 		Hunk:            hunk,
-		Theme:           th,
 		Colors:          DefaultPopupColors(),
-		TextSize:        unit.Sp(13),
+		TextSize:        textSize,
 		ShowStageButton: true,
-		MaxWidth:        unit.Dp(500),
+		popupLine:       popupLine,
 		MaxHeight:       unit.Dp(300),
 		diffList: widget.List{
 			List: layout.List{
@@ -130,6 +127,10 @@ func NewDiffPopup(hunk *providers.DiffHunk, th *material.Theme) *DiffPopup {
 			},
 		},
 	}
+}
+
+func (p *DiffPopup) PopupLine() int {
+	return p.popupLine
 }
 
 // Update processes events and returns any action taken.
@@ -160,76 +161,21 @@ func (p *DiffPopup) Update(gtx layout.Context) (PopupEvent, bool) {
 }
 
 // Layout renders the diff popup.
-func (p *DiffPopup) Layout(gtx layout.Context) layout.Dimensions {
+func (p *DiffPopup) Layout(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	if p.Hunk == nil {
 		return layout.Dimensions{}
 	}
 
-	return layout.Stack{}.Layout(gtx,
-		// Shadow and background
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			return p.drawBackgroundWithShadow(gtx)
-		}),
-		// Content
-		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			return p.layoutContent(gtx)
-		}),
-	)
-}
-
-func (p *DiffPopup) drawBackgroundWithShadow(gtx layout.Context) layout.Dimensions {
-	size := gtx.Constraints.Min
-	radius := gtx.Dp(unit.Dp(6))
-
-	// Draw shadow layers
-	shadowOffset := gtx.Dp(unit.Dp(2))
-	shadowBlur := gtx.Dp(unit.Dp(8))
-	shadowColors := []color.NRGBA{
-		{A: 0x10},
-		{A: 0x18},
-		{A: 0x20},
-	}
-
-	for i, shadowColor := range shadowColors {
-		layerOffset := shadowOffset + shadowBlur - i*(shadowBlur/len(shadowColors))
-		shadowRect := image.Rectangle{
-			Min: image.Point{X: layerOffset / 2, Y: layerOffset / 2},
-			Max: image.Point{X: size.X + layerOffset, Y: size.Y + layerOffset},
-		}
-		paint.FillShape(gtx.Ops, shadowColor,
-			clip.UniformRRect(shadowRect, radius+layerOffset/4).Op(gtx.Ops))
-	}
-
-	rect := image.Rectangle{Max: size}
-
-	// Draw border
-	borderWidth := gtx.Dp(unit.Dp(1))
-	borderRect := rect.Inset(-borderWidth)
-	stack := clip.UniformRRect(borderRect, radius+borderWidth).Push(gtx.Ops)
-	paint.ColorOp{Color: p.Colors.Border.NRGBA()}.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	stack.Pop()
-
-	// Draw background
-	stack = clip.UniformRRect(rect, radius).Push(gtx.Ops)
-	paint.ColorOp{Color: p.Colors.Background.NRGBA()}.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	stack.Pop()
-
-	return layout.Dimensions{Size: size}
-}
-
-func (p *DiffPopup) layoutContent(gtx layout.Context) layout.Dimensions {
-	gtx.Constraints.Max.X = gtx.Dp(p.MaxWidth)
 	gtx.Constraints.Max.Y = gtx.Dp(p.MaxHeight)
 	gtx.Constraints.Min = image.Point{}
 
-	return layout.Flex{
+	macro := op.Record(gtx.Ops)
+	dims := layout.Flex{
 		Axis: layout.Vertical,
 	}.Layout(gtx,
 		// Header with buttons
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return p.layoutHeader(gtx)
+			return p.layoutHeader(gtx, th)
 		}),
 		// Separator
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -237,12 +183,20 @@ func (p *DiffPopup) layoutContent(gtx layout.Context) layout.Dimensions {
 		}),
 		// Diff content
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return p.layoutDiffContent(gtx)
+			return p.layoutDiffContent(gtx, th)
 		}),
 	)
+	callOp := macro.Stop()
+
+	defer clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops).Pop()
+	paint.ColorOp{Color: th.ContrastBg}.Add(gtx.Ops)
+	paint.PaintOp{}.Add(gtx.Ops)
+	callOp.Add(gtx.Ops)
+
+	return dims
 }
 
-func (p *DiffPopup) layoutHeader(gtx layout.Context) layout.Dimensions {
+func (p *DiffPopup) layoutHeader(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	inset := layout.Inset{
 		Top:    unit.Dp(8),
 		Bottom: unit.Dp(8),
@@ -258,17 +212,17 @@ func (p *DiffPopup) layoutHeader(gtx layout.Context) layout.Dimensions {
 		}.Layout(gtx,
 			// Title
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return p.layoutTitle(gtx)
+				return p.layoutTitle(gtx, th)
 			}),
 			// Buttons
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return p.layoutButtons(gtx)
+				return p.layoutButtons(gtx, th)
 			}),
 		)
 	})
 }
 
-func (p *DiffPopup) layoutTitle(gtx layout.Context) layout.Dimensions {
+func (p *DiffPopup) layoutTitle(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	var title string
 	switch p.Hunk.Type {
 	case providers.DiffAdded:
@@ -279,19 +233,19 @@ func (p *DiffPopup) layoutTitle(gtx layout.Context) layout.Dimensions {
 		title = "Deleted Lines"
 	}
 
-	label := material.Label(p.Theme, p.TextSize, title)
+	label := material.Label(th, p.TextSize, title)
 	label.Color = p.Colors.HeaderText.NRGBA()
 	return label.Layout(gtx)
 }
 
-func (p *DiffPopup) layoutButtons(gtx layout.Context) layout.Dimensions {
+func (p *DiffPopup) layoutButtons(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{
 		Axis:    layout.Horizontal,
 		Spacing: layout.SpaceStart,
 	}.Layout(gtx,
 		// Revert button
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return p.layoutButton(gtx, &p.revertBtn, "Revert")
+			return p.layoutButton(gtx, th, &p.revertBtn, "Revert")
 		}),
 		// Stage button (optional)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -299,19 +253,19 @@ func (p *DiffPopup) layoutButtons(gtx layout.Context) layout.Dimensions {
 				return layout.Dimensions{}
 			}
 			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return p.layoutButton(gtx, &p.stageBtn, "Stage")
+				return p.layoutButton(gtx, th, &p.stageBtn, "Stage")
 			})
 		}),
 		// Close button
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return p.layoutButton(gtx, &p.closeBtn, "✕")
+				return p.layoutButton(gtx, th, &p.closeBtn, "✕")
 			})
 		}),
 	)
 }
 
-func (p *DiffPopup) layoutButton(gtx layout.Context, btn *widget.Clickable, labelText string) layout.Dimensions {
+func (p *DiffPopup) layoutButton(gtx layout.Context, th *material.Theme, btn *widget.Clickable, labelText string) layout.Dimensions {
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions {
@@ -322,7 +276,7 @@ func (p *DiffPopup) layoutButton(gtx layout.Context, btn *widget.Clickable, labe
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					label := material.Label(p.Theme, p.TextSize-1, labelText)
+					label := material.Label(th, p.TextSize-1, labelText)
 					label.Color = p.Colors.ButtonText.NRGBA()
 					return label.Layout(gtx)
 				})
@@ -345,14 +299,13 @@ func (p *DiffPopup) layoutSeparator(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: rect.Max}
 }
 
-func (p *DiffPopup) layoutDiffContent(gtx layout.Context) layout.Dimensions {
-	// Build the list of lines to display
-	type diffLine struct {
-		text  string
-		isOld bool
-		isNew bool
-	}
+type diffLine struct {
+	text  string
+	isOld bool
+	isNew bool
+}
 
+func (p *DiffPopup) layoutDiffContent(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	var lines []diffLine
 
 	switch p.Hunk.Type {
@@ -381,11 +334,11 @@ func (p *DiffPopup) layoutDiffContent(gtx layout.Context) layout.Dimensions {
 
 	return p.diffList.Layout(gtx, len(lines), func(gtx layout.Context, index int) layout.Dimensions {
 		line := lines[index]
-		return p.layoutDiffLine(gtx, line.text, line.isOld, line.isNew)
+		return p.layoutDiffLine(gtx, th, line.text, line.isOld, line.isNew)
 	})
 }
 
-func (p *DiffPopup) layoutDiffLine(gtx layout.Context, lineText string, isOld, isNew bool) layout.Dimensions {
+func (p *DiffPopup) layoutDiffLine(gtx layout.Context, th *material.Theme, lineText string, isOld, isNew bool) layout.Dimensions {
 	// Determine colors
 	var bgColor gvcolor.Color
 	var textColor color.NRGBA
@@ -416,7 +369,7 @@ func (p *DiffPopup) layoutDiffLine(gtx layout.Context, lineText string, isOld, i
 				Right:  unit.Dp(12),
 			}
 			return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				label := material.Label(p.Theme, p.TextSize, lineText)
+				label := material.Label(th, p.TextSize, lineText)
 				label.Color = textColor
 				return label.Layout(gtx)
 			})

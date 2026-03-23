@@ -20,7 +20,10 @@ import (
 	"gioui.org/widget/material"
 	"github.com/oligo/gvcode"
 	"github.com/oligo/gvcode/addons/completion"
+	"github.com/oligo/gvcode/addons/diff"
 	gvcolor "github.com/oligo/gvcode/color"
+	"github.com/oligo/gvcode/gutter"
+	"github.com/oligo/gvcode/gutter/providers"
 
 	// "github.com/oligo/gvcode/textstyle/decoration"
 	"github.com/oligo/gvcode/textstyle/syntax"
@@ -33,11 +36,14 @@ type (
 )
 
 type EditorApp struct {
-	window  *app.Window
-	th      *material.Theme
-	state   *gvcode.Editor
-	xScroll widget.Scrollbar
-	yScroll widget.Scrollbar
+	window       *app.Window
+	th           *material.Theme
+	state        *gvcode.Editor
+	xScroll      widget.Scrollbar
+	yScroll      widget.Scrollbar
+	diffProvider *providers.VCSDiffProvider
+	diffPopup    *diff.DiffPopup
+	differ       *diff.GitDiff
 }
 
 const (
@@ -75,6 +81,22 @@ func (ed *EditorApp) layout(gtx C, th *material.Theme) D {
 			// May also need to sync the editor content to the completion engine before
 			// calling OnTextEdit.
 			ed.state.OnTextEdit()
+			// Parse git diff for the current file and update the diff provider
+			if hunks := ed.differ.ParseDiff([]byte(ed.state.Text())); len(hunks) > 0 {
+				ed.diffProvider.UpdateDiff(hunks)
+			}
+
+		case gvcode.GutterEventWrapper:
+			wrapper := evt.(gvcode.GutterEventWrapper)
+			if click, ok := wrapper.Event.(gutter.GutterClickEvent); ok {
+				if click.ProviderID == providers.DiffProviderID {
+					hunk := ed.diffProvider.GetHunk(click.Line)
+					if hunk != nil {
+						ed.diffPopup = diff.NewDiffPopup(hunk, th.TextSize, click.Line)
+					}
+				}
+			}
+
 		}
 	}
 
@@ -106,6 +128,30 @@ func (ed *EditorApp) layout(gtx C, th *material.Theme) D {
 						)
 
 						dims := ed.state.Layout(gtx, th.Shaper)
+
+						if ed.diffPopup != nil {
+							if evt, ok := ed.diffPopup.Update(gtx); ok {
+								switch evt.Action {
+								case diff.ActionRevert:
+									//app.revertHunk(evt.Hunk)
+								case diff.ActionStage:
+									//app.stageHunk(evt.Hunk)
+								case diff.ActionClose:
+									ed.diffPopup = nil
+								}
+							}
+
+							if ed.diffPopup != nil {
+								// Calculate popup position based on the clicked line
+								// Position below the line by adding line height
+								_, pos := ed.state.ConvertPos(ed.diffPopup.PopupLine(), 0)
+								position := image.Point{X: pos.Round().X, Y: pos.Round().Y}
+								log.Println("diff popup position: ", position)
+								ed.state.PaintOverlay(gtx, position, func(gtx layout.Context) layout.Dimensions {
+									return ed.diffPopup.Layout(gtx, th)
+								})
+							}
+						}
 
 						macro := op.Record(gtx.Ops)
 						scrollbarDims := func(gtx C) D {
@@ -176,6 +222,7 @@ func main() {
 
 	thisFile, _ := os.ReadFile("./main.go")
 	editorApp.state.SetText(string(thisFile))
+	editorApp.differ = diff.NewGitDiff("./main.go")
 
 	// Setting up auto-completion.
 	cm := &completion.DefaultCompletion{Editor: editorApp.state}
@@ -203,24 +250,16 @@ func main() {
 		gvcode.WithCornerRadius(unit.Dp(4)),
 	)
 	editorApp.state.WithOptions(gvcode.WithDefaultGutters(), gvcode.WithGutterGap(unit.Dp(12)))
+	editorApp.diffProvider = providers.NewVCSDiffProvider()
+	editorApp.state.WithOptions(gvcode.WithGutter(editorApp.diffProvider))
 
+	// Parse git diff for the current file and update the diff provider
+	if hunks := editorApp.differ.ParseDiff(thisFile); len(hunks) > 0 {
+		editorApp.diffProvider.UpdateDiff(hunks)
+	}
 
 	tokens := HightlightTextByPattern(editorApp.state.Text(), syntaxPattern)
 	editorApp.state.SetSyntaxTokens(tokens...)
-
-	// highlightColor, _ := gvcolor.Hex2Color("#e74c3c50")
-	// highlightColor2, _ := gvcolor.Hex2Color("#f1c40f50")
-	// highlightColor3, _ := gvcolor.Hex2Color("#e74c3c")
-
-	// err := editorApp.state.AddDecorations(
-	// 	decoration.Decoration{Source: "test", Start: 5, End: 150, Background: &decoration.Background{Color: highlightColor}},
-	// 	decoration.Decoration{Source: "test", Start: 100, End: 200, Background: &decoration.Background{Color: highlightColor2}},
-	// 	decoration.Decoration{Source: "test", Start: 100, End: 200, Squiggle: &decoration.Squiggle{Color: highlightColor3}},
-	// 	decoration.Decoration{Source: "test", Start: 250, End: 400, Strikethrough: &decoration.Strikethrough{Color: highlightColor3}},
-	// )
-	// if err != nil {
-	// 	panic(err)
-	// }
 
 	go func() {
 		err := editorApp.run()
