@@ -19,20 +19,6 @@ func (e *Editor) WithOptions(opts ...EditorOption) {
 	}
 }
 
-// Deprecated: Use the dedicated EditorOptions to set each of the options instead.
-//
-// WithShaperParams set the basic shaping params for the editor.
-func WithShaperParams(font font.Font, textSize unit.Sp, alignment text.Alignment, lineHeight unit.Sp, lineHeightScale float32) EditorOption {
-	return func(e *Editor) {
-		e.initBuffer()
-		e.text.Font = font
-		e.text.TextSize = textSize
-		e.text.Alignment = alignment
-		e.text.LineHeight = lineHeight
-		e.text.LineHeightScale = lineHeightScale
-	}
-}
-
 // Set font to use for the editor.
 func WithFont(font font.Font) EditorOption {
 	return func(e *Editor) {
@@ -141,7 +127,7 @@ func WrapLine(enabled bool) EditorOption {
 	}
 }
 
-// Deprecated. Please use [WithGutter] or [WithDefaultGutters]
+// Deprecated: Please use [WithGutter] or [WithDefaultGutters]
 // WithLineNumber configures whether to show line number or not.
 func WithLineNumber(enabled bool) EditorOption {
 	return func(e *Editor) {
