@@ -659,6 +659,23 @@ func (e *Editor) Selection() (start, end int) {
 	return e.text.Selection()
 }
 
+// SelectLines select logical lines starting from the current line(inclusive).
+// The number of lines to be selected is specified by totalLines. If backward
+// is true, it select lines backward.
+func (e *Editor) SelectLines(totalLines int, backward bool) {
+	e.initBuffer()
+
+	start, end := e.text.Selection()
+	caretStart := min(start, end)
+	firstLine, _ := e.text.FindParagraph(caretStart)
+
+	start, end = e.text.RangeOfLines(firstLine, totalLines, backward)
+	if start == 0 && end == 0 {
+		return
+	}
+	e.SetCaret(start, end)
+}
+
 // SetCaret moves the caret to start, and sets the selection end to end. start
 // and end are in runes, and represent offsets into the editor text.
 func (e *Editor) SetCaret(start, end int) {

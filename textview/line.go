@@ -165,6 +165,35 @@ func (e *TextView) PartialLineSelected() bool {
 	}
 }
 
+// RangeOfLines calculates rune range of the logical lines starting from the startLine(inclusive),
+// to startLine+totalLines. If backward is true, it looks for lines backward.
+func (e *TextView) RangeOfLines(startLine int, totalLines int, backward bool) (start, end int) {
+	total := len(e.layouter.Paragraphs)
+
+	if total == 0 || startLine >= total || totalLines <= 0 {
+		return
+	}
+
+	var first, last lt.Paragraph
+
+	startLine = max(0, min(startLine, total-1))
+	first = e.layouter.Paragraphs[startLine]
+
+	if backward {
+		lastIdx := max(0, startLine-(totalLines-1))
+		last = e.layouter.Paragraphs[lastIdx]
+	} else {
+		lastIdx := min(total-1, startLine+(totalLines-1))
+		last = e.layouter.Paragraphs[lastIdx]
+	}
+
+	if backward {
+		return first.RuneOff + first.Runes, last.RuneOff
+	}
+
+	return first.RuneOff, last.RuneOff + last.Runes
+}
+
 // expandTab tries to expand tab character to spaces while respecting tab stops.
 // If s is a single tab character and the editor is configured to use soft tab,
 // the tab is expanded with spaces, also tab stop is accounted when calculating
