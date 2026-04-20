@@ -123,7 +123,7 @@ func (t *TextTokens) AdjustOffsets(start, end, newEnd int) {
 		// Adjust End: tokens ending past the old end shift;
 		// tokens ending inside the replaced range clamp to newEnd.
 		switch {
-		case tk.End > end:
+		case tk.End >= end:
 			tk.End += delta
 		case tk.End > start:
 			if tk.End > newEnd {
