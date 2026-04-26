@@ -4,6 +4,7 @@ import (
 	"image"
 	"io"
 	"math"
+	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -322,7 +323,7 @@ func (e *Editor) onCopyCut(gtx layout.Context, k key.Event) EditorEvent {
 	}
 
 	if text := string(e.scratch); text != "" {
-		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
+		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: normalizeCopyContent(text)})
 		if k.Name == "X" && e.mode != ModeReadOnly {
 			if !lineOp {
 				if e.Delete(1) != 0 {
@@ -337,6 +338,16 @@ func (e *Editor) onCopyCut(gtx layout.Context, k key.Event) EditorEvent {
 	}
 
 	return nil
+}
+
+// normalizeCopyContent convert CRLF text to OS-native line ending character, so other apps
+// can read and display it right.
+func normalizeCopyContent(text string) io.ReadCloser {
+	if runtime.GOOS == "windows" {
+		return io.NopCloser(strings.NewReader(ToCRLF(text)))
+	}
+
+	return io.NopCloser(strings.NewReader(text))
 }
 
 // onTab handles tab key event. If there is no selection of lines, intert a tab character

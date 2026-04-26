@@ -47,14 +47,14 @@ func GuessIndentation(text string) (TabStyle, bool, int) {
 		return false
 	}
 
-	for  {
+	for {
 		hasMore := indentScanner(100)
-		if (tabs + spaces<=5 || spaces == tabs) && hasMore {
+		if (tabs+spaces <= 5 || spaces == tabs) && hasMore {
 			continue
 		}
 
-		mixedIndent := tabs>0 && spaces>0
-		mainIndent := Tabs 
+		mixedIndent := tabs > 0 && spaces > 0
+		mainIndent := Tabs
 		if tabs > spaces {
 			mainIndent = Tabs
 		} else if spaces > tabs {
@@ -69,6 +69,74 @@ func GuessIndentation(text string) (TabStyle, bool, int) {
 			}
 		}
 
-		return mainIndent, mixedIndent, bestWidth		
+		return mainIndent, mixedIndent, bestWidth
 	}
+}
+
+type LineEnding string
+
+const (
+	LF   LineEnding = "\n"
+	CRLF LineEnding = "\r\n"
+)
+
+const (
+	// maxFullScanSize defines the limit (64KB) under which we scan the whole file
+	maxFullScanSize = 32 * 1024
+	// sniffBufferSize is the fallback size for very large files
+	sniffBufferSize = 4096
+)
+
+// DetectLineEnding intelligently determines the line ending convention.
+// It scans the whole file for the most common ending if small,
+// otherwise it sniffs the first 4KB for the first occurrence.
+func DetectLineEnding(text string) LineEnding {
+	size := len(text)
+	if size == 0 {
+		return LF
+	}
+
+	// For small file do a full scan for majority rule
+	if size <= maxFullScanSize {
+		crlfCount := strings.Count(text, "\r\n")
+		// Count total \n and subtract those that are part of \r\n
+		lfCount := strings.Count(text, "\n") - crlfCount
+
+		if crlfCount > lfCount {
+			return CRLF
+		}
+		return LF
+	}
+
+	// For large file, quick sniff of the first 4KB
+	content := text[:min(sniffBufferSize, size)]
+	index := strings.IndexByte(content, '\n')
+
+	// If the byte before the first \n is \r, assume CRLF for the file
+	if index > 0 && content[index-1] == '\r' {
+		return CRLF
+	}
+
+	return LF
+}
+
+func StripLineEnding(text string) string {
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.ReplaceAll(normalized, "\r", "\n")
+}
+
+func ToCRLF(text string) string {
+	pureLF := strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.ReplaceAll(pureLF, "\n", "\r\n")
+}
+
+// A helper method to convert line endings based on previously detected one.
+func (e *Editor) PrepareForSave(normalizedContent string) string {
+	if e.lineEnding == CRLF {
+		// Remove any stray \r (just in case)
+		clean := strings.ReplaceAll(normalizedContent, "\r", "")
+		// Perform the safe conversion
+		return strings.ReplaceAll(clean, "\n", "\r\n")
+	}
+	return normalizedContent
 }

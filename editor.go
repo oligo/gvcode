@@ -78,6 +78,9 @@ type Editor struct {
 	wordHighlighter wordHighlighter
 	// selection highlighting state
 	selectionHighlighter selectionHighlighter
+
+	// line ending detected when the editor loads content
+	lineEnding LineEnding
 }
 
 type imeState struct {
@@ -322,6 +325,9 @@ func (e *Editor) Len() int {
 // Text returns the contents of the editor. This method is not concurrent safe,
 // and you should use the Reader returned from GetReader to read from multiple
 // goroutines.
+//
+// Text does not convert \n to \r\n if the detected lineEnding is \r\n, it's the
+// caller's responsibility to do the convertion.
 func (e *Editor) Text() string {
 	e.initBuffer()
 
@@ -333,10 +339,17 @@ func (e *Editor) Text() string {
 // GetReader returns a [io.ReadSeeker] to the caller to read the text buffer. This
 // is the preferred way to read from the editor, especially when reading from
 // multiple goroutines.
+//
+// GetReader does not convert \n to \r\n if the detected lineEnding is \r\n, it's the
+// caller's responsibility to do the convertion.
 func (e *Editor) GetReader() io.ReadSeeker {
 	return buffer.NewReader(e.text.Source())
 }
 
+// SetText init the editor with content s.
+// It also detects the content indent kind, indent size, and the line ending style.
+// Internally the editor uses \n for line ending, so it also convert all \r\n to \n
+// before populate the internal text buffer.
 func (e *Editor) SetText(s string) {
 	e.initBuffer()
 
@@ -344,7 +357,9 @@ func (e *Editor) SetText(s string) {
 	e.text.SoftTab = indent == Spaces
 	e.text.TabWidth = size
 
-	e.text.SetText(s)
+	e.lineEnding = DetectLineEnding(s)
+
+	e.text.SetText(StripLineEnding(s))
 	e.ime.start = 0
 	e.ime.end = 0
 	// Reset xoff and move the caret to the beginning.
@@ -436,12 +451,16 @@ func (e *Editor) DeleteLine() (deletedRunes int) {
 	return end - start
 }
 
+// Inert insert text s at the cursor position. If there is a selection,
+// it replace the selection with text s.
 func (e *Editor) Insert(s string) (insertedRunes int) {
 	e.initBuffer()
 
 	if s == "" {
 		return
 	}
+
+	s = StripLineEnding(s)
 
 	start, end := e.text.Selection()
 	moves := e.replace(start, end, s)
@@ -471,6 +490,8 @@ func (e *Editor) InsertLine(s string) (insertedRunes int) {
 	if s == "" {
 		return
 	}
+
+	s = StripLineEnding(s)
 
 	if isSingleLine(s) && e.text.SelectionLen() == 0 {
 		// If s is a paragraph of text, insert s between the current line
@@ -750,6 +771,10 @@ func (e *Editor) TabStyle() (TabStyle, int) {
 
 func (e *Editor) ColorPalette() *color.ColorPalette {
 	return e.colorPalette
+}
+
+func (e *Editor) DetectedLineEnding() LineEnding {
+	return e.lineEnding
 }
 
 // SetDebug enable or disable the debug mode.
