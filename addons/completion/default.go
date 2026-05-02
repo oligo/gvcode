@@ -76,22 +76,21 @@ func (dc *DefaultCompletion) onKey(evt key.Event) {
 
 	ctx := dc.Editor.GetCompletionContext()
 	dc.session = newSession(cmp, keyTrigger)
-	dc.updateCandidates(dc.session.Update(ctx))
+	dc.updateCandidates(dc.session.Update(ctx, dc.Editor))
 }
 
 func (dc *DefaultCompletion) OnText(ctx gvcode.CompletionContext) {
-	if ctx.Input == "" {
-		dc.Cancel()
-		return
-	}
-
 	if dc.session != nil && dc.session.IsValid() {
-		dc.updateCandidates(dc.session.Update(ctx))
+		dc.updateCandidates(dc.session.Update(ctx, dc.Editor))
 		if dc.session.IsValid() {
 			return
 		}
 		// Session became invalid (e.g., terminated by a trigger char like ".").
 		// Fall through to check if input can start a new completion session.
+	}
+
+	if ctx.Input == "" {
+		return
 	}
 
 	var completor *delegatedCompletor
@@ -110,9 +109,8 @@ func (dc *DefaultCompletion) OnText(ctx gvcode.CompletionContext) {
 			dc.session = newSession(completor, kind)
 		}
 
-		dc.updateCandidates(dc.session.Update(ctx))
+		dc.updateCandidates(dc.session.Update(ctx, dc.Editor))
 	}
-
 }
 
 func (dc *DefaultCompletion) updateCandidates(candidates []gvcode.CompletionCandidate) {
@@ -165,12 +163,11 @@ func (dc *DefaultCompletion) OnConfirm(idx int) {
 	// replace both the LSP's detected token and everything the user typed.
 	editRange = mergeRange(editRange, dc.session.PrefixRange())
 
-	caretStart, caretEnd := editRange.Start.Runes, editRange.End.Runes
-	// Assume line/column is set, convert the line/column position to rune offsets.
-	if caretStart <= 0 && caretEnd <= 0 {
-		caretStart, _ = dc.Editor.ConvertPos(editRange.Start.Line, editRange.Start.Column)
-		caretEnd, _ = dc.Editor.ConvertPos(editRange.End.Line, editRange.End.Column)
-	}
+	// Convert line/column to rune offsets. The LSP only provides line/column,
+	// and our tracked prefix range also has accurate line/column from CaretPos.
+	// Runes may differ between sources, so always use ConvertPos.
+	caretStart, _ := dc.Editor.ConvertPos(editRange.Start.Line, editRange.Start.Column)
+	caretEnd, _ := dc.Editor.ConvertPos(editRange.End.Line, editRange.End.Column)
 	// set the selection using range provided by the completor.
 	dc.Editor.SetCaret(caretStart, caretEnd)
 

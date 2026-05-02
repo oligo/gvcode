@@ -28,10 +28,15 @@ type session struct {
 	ctx      gvcode.CompletionContext
 	state    *triggerState
 	canceled bool
-	// buffered text while the user types.
+	// prefix is the current filter text: the text between prefixRange.Start
+	// and the current caret. When the caret moves within the prefix, prefix
+	// changes but prefixRange does not shrink — prefixRange tracks the full
+	// replacement range for OnConfirm.
 	prefix []rune
-	// input range of the cursor since when the session started and when completion
-	// confirmed.
+	// prefixRange spans from the session start position to the furthest the
+	// caret has reached. Its Start and End are used by OnConfirm (via
+	// ConvertPos) to determine the replacement range. May be wider than prefix
+	// when the caret moves back within the prefix.
 	prefixRange gvcode.EditRange
 	// Full candidates from the completor.
 	candidates []gvcode.CompletionCandidate
@@ -59,7 +64,7 @@ func hasTerminateChar(input string) bool {
 	return slices.Contains(terminatingChars, []rune(input)[0])
 }
 
-func (s *session) Update(ctx gvcode.CompletionContext) []gvcode.CompletionCandidate {
+func (s *session) Update(ctx gvcode.CompletionContext, editor *gvcode.Editor) []gvcode.CompletionCandidate {
 	if s.canceled {
 		return nil
 	}
@@ -68,33 +73,69 @@ func (s *session) Update(ctx gvcode.CompletionContext) []gvcode.CompletionCandid
 		s.candidates = s.state.completor.Suggest(ctx)
 		s.state.triggerChars = ctx.Input
 		s.state.triggered = false
-		s.prefix = s.prefix[:0]
-		s.prefixRange = gvcode.EditRange{}
+		s.setupPrefix(editor, ctx)
+	} else {
+		s.syncPrefix(editor, ctx)
 	}
 
 	if hasTerminateChar(ctx.Input) && ctx.Input != s.state.triggerChars {
-		// Always terminate when encountering a terminating character
-		// (including trigger characters like "." for method chaining)
+		s.makeInvalid()
+		return nil
+	}
+
+	// If nothing was typed and the prefix is empty, there is nothing to complete
+	// anymore — cancel the session. Key-triggered sessions are exempt: pressing
+	// Ctrl+Space with nothing at the caret should still show all completions.
+	if ctx.Input == "" && len(s.prefix) == 0 && s.state.triggerKind != keyTrigger {
 		s.makeInvalid()
 		return nil
 	}
 
 	s.ctx = ctx
+	return s.state.completor.FilterAndRank(string(s.prefix), s.candidates)
+}
 
-	if ctx.Input != "" && isSymbolChar([]rune(s.ctx.Input)[0]) {
-		s.prefix = append(s.prefix, []rune(ctx.Input)...)
-		if s.prefixRange == (gvcode.EditRange{}) {
+// setupPrefix initializes the prefix range and prefix for a newly triggered session.
+func (s *session) setupPrefix(editor *gvcode.Editor, ctx gvcode.CompletionContext) {
+	s.prefixRange.End = ctx.Position
+
+	switch s.state.triggerKind {
+	case keyTrigger:
+		// Key-triggered — prefix starts at current caret.
+		s.prefixRange.Start = ctx.Position
+		s.prefixRange.Start.Runes = ctx.Position.Runes
+		s.prefix = s.prefix[:0]
+	default:
+		if isSymbolChar([]rune(ctx.Input)[0]) {
 			start := ctx.Position
 			start.Column = max(0, start.Column-len([]rune(ctx.Input)))
-			start.Runes = 0
+			start.Runes = ctx.Position.Runes - len([]rune(ctx.Input))
 			s.prefixRange.Start = start
+			if editor != nil {
+				s.prefix = []rune(editor.ReadTextBetween(start.Runes, ctx.Position.Runes))
+			}
+		} else {
+			// Non-identifier trigger char — prefix starts at current caret, not
+			// at the trigger character.
+			s.prefixRange.Start = ctx.Position
+			s.prefixRange.Start.Runes = ctx.Position.Runes
+			s.prefix = s.prefix[:0]
 		}
-		s.prefixRange.End = ctx.Position
-		s.prefixRange.End.Runes = 0
 	}
+}
 
-	return s.state.completor.FilterAndRank(string(s.prefix), s.candidates)
-
+// syncPrefix reads the current prefix from the editor buffer for an already active session.
+func (s *session) syncPrefix(editor *gvcode.Editor, ctx gvcode.CompletionContext) {
+	if editor == nil {
+		return
+	}
+	s.prefix = []rune(editor.ReadTextBetween(s.prefixRange.Start.Runes, ctx.Position.Runes))
+	// Only extend the end of the prefix range; never shrink it. Cursor
+	// movement within the prefix should not reduce the replacement range
+	// that OnConfirm uses — only the filter prefix should change.
+	if ctx.Position.Runes > s.prefixRange.End.Runes {
+		s.prefixRange.End = ctx.Position
+	}
 }
 
 func (s *session) makeInvalid() {

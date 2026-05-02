@@ -300,6 +300,22 @@ func (e *TextView) ReadRuneAt(runeOff int) (rune, error) {
 	return e.src.ReadRuneAt(runeOff)
 }
 
+// ReadTextBetween reads text between two rune offsets (start inclusive, end exclusive).
+func (e *TextView) ReadTextBetween(start, end int) string {
+	if start >= end {
+		return ""
+	}
+	var buf []rune
+	for i := start; i < end; i++ {
+		r, err := e.src.ReadRuneAt(i)
+		if err != nil {
+			break
+		}
+		buf = append(buf, r)
+	}
+	return string(buf)
+}
+
 // Len is the length of the editor contents, in runes.
 func (e *TextView) Len() int {
 	e.makeValid()

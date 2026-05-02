@@ -336,6 +336,11 @@ func (e *Editor) Text() string {
 	return string(e.scratch)
 }
 
+// ReadTextBetween reads text between two rune offsets (start inclusive, end exclusive).
+func (e *Editor) ReadTextBetween(start, end int) string {
+	return e.text.ReadTextBetween(start, end)
+}
+
 // GetReader returns a [io.ReadSeeker] to the caller to read the text buffer. This
 // is the preferred way to read from the editor, especially when reading from
 // multiple goroutines.

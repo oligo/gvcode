@@ -44,7 +44,8 @@ func (e *Editor) processEvents(gtx layout.Context) (ev EditorEvent, ok bool) {
 		switch ev.(type) {
 		case ChangeEvent:
 			e.wordHighlighter.MarkActive(false)
-			// Content of editor changed, update auto-completor to update the completion session.
+			e.updateCompletor()
+		case SelectEvent:
 			e.updateCompletor()
 		}
 	}()
@@ -471,14 +472,6 @@ func (e *Editor) isNearWordChar(runeOff int, backward bool) bool {
 
 	return false
 
-}
-
-func (e *Editor) cancelCompletor() {
-	if e.completor == nil {
-		return
-	}
-
-	e.completor.Cancel()
 }
 
 func (e *Editor) currentCompletionCtx() CompletionContext {
