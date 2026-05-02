@@ -112,7 +112,14 @@ func NewTextEditWithPos(text string, start Position, end Position) TextEdit {
 
 // Completor defines a interface that each of the delegated completor must implement.
 type Completor interface {
+	// Trigger returns the Trigger object used to detect the input can trigger a completion
+	// session.
 	Trigger() Trigger
+
+	// Suggest calls the backend completion engine to fetch possible candicates
+	// given the completion context. In the case of LSP, it also needs to sync the
+	// editor content by calling notification "textDocument/didChange", or "textDocument/didOpen",
+	// before calling the "textDocument/completion" method.
 	Suggest(ctx CompletionContext) []CompletionCandidate
 
 	// FilterAndRank filters the passed in candidates using the pattern, and then

@@ -78,9 +78,7 @@ func (ed *EditorApp) layout(gtx C, th *material.Theme) D {
 		case gvcode.ChangeEvent:
 			tokens := HightlightTextByPattern(ed.state.Text(), syntaxPattern)
 			ed.state.SetSyntaxTokens(tokens...)
-			// May also need to sync the editor content to the completion engine before
-			// calling OnTextEdit.
-			ed.state.OnTextEdit()
+
 			// Parse git diff for the current file and update the diff provider
 			if hunks := ed.differ.ParseDiff([]byte(ed.state.Text())); len(hunks) > 0 {
 				ed.diffProvider.UpdateDiff(hunks)

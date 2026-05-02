@@ -44,6 +44,8 @@ func (e *Editor) processEvents(gtx layout.Context) (ev EditorEvent, ok bool) {
 		switch ev.(type) {
 		case ChangeEvent:
 			e.wordHighlighter.MarkActive(false)
+			// Content of editor changed, update auto-completor to update the completion session.
+			e.updateCompletor()
 		}
 	}()
 
@@ -502,9 +504,9 @@ func (e *Editor) GetCompletionContext() CompletionContext {
 	return e.currentCompletionCtx()
 }
 
-// OnTextEdit should be called after normal keyboard input to update the
+// updateCompletor should be called after normal keyboard input to update the
 // auto completion engine, usually when received a ChangeEvent.
-func (e *Editor) OnTextEdit() {
+func (e *Editor) updateCompletor() {
 	if e.completor == nil {
 		return
 	}
