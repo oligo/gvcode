@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"gioui.org/io/clipboard"
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
@@ -323,10 +324,22 @@ func (e *Editor) processCommands(gtx layout.Context) EditorEvent {
 		e.buildBuiltinCommands()
 	}
 
-	for _, cmds := range e.commands {
-		cmd := cmds[len(cmds)-1]
+	for _, cmdStack := range e.commands {
+		// reverse the commands & filters in the key group, and then
+		// pass the filters to the input source get matched key events.
+		// So the last registered command can be first matched.
+		//
+		// If the same filter exists, the commands registered earlier will not be activated.
+		// If the top most command does not match, commands below will be matched. The first matched win.
+		var filters = make([]event.Filter, 0, len(cmdStack))
+		var cmds = make([]keyCommand, 0, len(cmdStack))
+		for i := len(cmdStack) - 1; i >= 0; i-- {
+			filters = append(filters, cmdStack[i].filter)
+			cmds = append(cmds, cmdStack[i])
+		}
+
 		for {
-			ke, ok := gtx.Event(cmd.filter)
+			ke, ok := gtx.Event(filters...)
 			if !ok {
 				break
 			}
@@ -338,11 +351,18 @@ func (e *Editor) processCommands(gtx layout.Context) EditorEvent {
 				}
 				e.scrollCaret = true
 				e.scroller.Stop()
-				if !ke.Modifiers.Contain(cmd.filter.Required) {
-					break
+
+				// do a similar match process like gtx.Event to find out which command
+				// should be activated.
+				idx := matchedCmd(ke, cmds)
+				if idx < 0 {
+					// should not happen.
+					continue
 				}
 
-				if evt := cmd.handler(gtx, ke); evt != nil {
+				cmd := cmds[idx]
+				evt := cmd.handler(gtx, ke)
+				if evt != nil {
 					return evt
 				}
 			}
@@ -350,4 +370,28 @@ func (e *Editor) processCommands(gtx layout.Context) EditorEvent {
 	}
 
 	return nil
+}
+
+func matchedCmd(ke key.Event, cmds []keyCommand) int {
+	for idx, cmd := range cmds {
+		if keyFilterMatch(cmd.filter, ke) {
+			return idx
+		}
+	}
+	return -1
+}
+
+// Similar logic to one used by the builtin router.
+func keyFilterMatch(f key.Filter, e key.Event) bool {
+	if f.Name != "" && f.Name != e.Name {
+		return false
+	}
+
+	if e.Modifiers&f.Required != f.Required {
+		return false
+	}
+	if e.Modifiers&^(f.Required|f.Optional) != 0 {
+		return false
+	}
+	return true
 }
