@@ -1,4 +1,8 @@
-# gvcode
+# gvcode 
+
+![Build Status](https://github.com/oligo/gvcode/actions/workflows/go.yml/badge.svg)
+[![Go Reference](https://pkg.go.dev/badge/github.com/oligo/oligo.svg)](https://pkg.go.dev/github.com/oligo/gvcode)
+
 
 gvcode is a Gio based text editor component for code editing.
 
