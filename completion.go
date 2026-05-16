@@ -127,11 +127,30 @@ type Completor interface {
 	FilterAndRank(pattern string, candidates []CompletionCandidate) []CompletionCandidate
 }
 
+type CompletionTriggerKind uint8
+
+const (
+	AutoTrigger CompletionTriggerKind = iota
+	CharTrigger
+	KeyTrigger
+)
+
+// TriggerPolicy controls how a completion session starts, where its filtering
+// prefix begins, and when the active session should be canceled.
+type TriggerPolicy interface {
+	CanStart(trigger Trigger, ctx CompletionContext) bool
+	PrefixRange(trigger Trigger, kind CompletionTriggerKind, ctx CompletionContext) EditRange
+	ShouldCancel(trigger Trigger, kind CompletionTriggerKind, triggerInput string, ctx CompletionContext, prefix string) bool
+}
+
 // Trigger
 type Trigger struct {
-	// Characters that must be present before the caret to trigger the completion.
-	// If it is empty, any character will trigger the completion.
+	// Characters that may start completion under the default policy.
 	Characters []string
+
+	// Policy controls completion session activation and prefix handling. When
+	// nil, the default completion policy is used.
+	Policy TriggerPolicy
 
 	// Trigger completion even the caret is in side of comment.
 	Comment bool

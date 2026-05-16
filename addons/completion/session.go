@@ -1,23 +1,12 @@
 package completion
 
-import (
-	"slices"
-
-	"github.com/oligo/gvcode"
-)
-
-type triggerKind uint8
-
-const (
-	autoTrigger triggerKind = iota
-	charTrigger
-	keyTrigger
-)
+import "github.com/oligo/gvcode"
 
 type triggerState struct {
-	triggerKind triggerKind
+	triggerKind gvcode.CompletionTriggerKind
 	// the activated completor.
 	completor    *delegatedCompletor
+	policy       gvcode.TriggerPolicy
 	triggered    bool
 	triggerChars string
 }
@@ -42,26 +31,15 @@ type session struct {
 	candidates []gvcode.CompletionCandidate
 }
 
-func newSession(completor *delegatedCompletor, kind triggerKind) *session {
+func newSession(completor *delegatedCompletor, kind gvcode.CompletionTriggerKind) *session {
 	return &session{
 		state: &triggerState{
 			triggerKind: kind,
 			completor:   completor,
+			policy:      policyForTrigger(completor.Trigger()),
 			triggered:   true,
 		},
 	}
-}
-
-var terminatingChars = []rune{
-	'{', '}', '(', ')', ',', ';', ' ', '\n', '\t', '.',
-}
-
-func hasTerminateChar(input string) bool {
-	if input == "" {
-		return false
-	}
-
-	return slices.Contains(terminatingChars, []rune(input)[0])
 }
 
 func (s *session) Update(ctx gvcode.CompletionContext, editor *gvcode.Editor) []gvcode.CompletionCandidate {
@@ -78,15 +56,7 @@ func (s *session) Update(ctx gvcode.CompletionContext, editor *gvcode.Editor) []
 		s.syncPrefix(editor, ctx)
 	}
 
-	if hasTerminateChar(ctx.Input) && ctx.Input != s.state.triggerChars {
-		s.makeInvalid()
-		return nil
-	}
-
-	// If nothing was typed and the prefix is empty, there is nothing to complete
-	// anymore — cancel the session. Key-triggered sessions are exempt: pressing
-	// Ctrl+Space with nothing at the caret should still show all completions.
-	if ctx.Input == "" && len(s.prefix) == 0 && s.state.triggerKind != keyTrigger {
+	if s.state.policy.ShouldCancel(s.state.completor.Trigger(), s.state.triggerKind, s.state.triggerChars, ctx, string(s.prefix)) {
 		s.makeInvalid()
 		return nil
 	}
@@ -97,31 +67,12 @@ func (s *session) Update(ctx gvcode.CompletionContext, editor *gvcode.Editor) []
 
 // setupPrefix initializes the prefix range and prefix for a newly triggered session.
 func (s *session) setupPrefix(editor *gvcode.Editor, ctx gvcode.CompletionContext) {
-	s.prefixRange.End = ctx.Position
-
-	switch s.state.triggerKind {
-	case keyTrigger:
-		// Key-triggered — prefix starts at current caret.
-		s.prefixRange.Start = ctx.Position
-		s.prefixRange.Start.Runes = ctx.Position.Runes
-		s.prefix = s.prefix[:0]
-	default:
-		if isSymbolChar([]rune(ctx.Input)[0]) {
-			start := ctx.Position
-			start.Column = max(0, start.Column-len([]rune(ctx.Input)))
-			start.Runes = ctx.Position.Runes - len([]rune(ctx.Input))
-			s.prefixRange.Start = start
-			if editor != nil {
-				s.prefix = []rune(editor.ReadTextBetween(start.Runes, ctx.Position.Runes))
-			}
-		} else {
-			// Non-identifier trigger char — prefix starts at current caret, not
-			// at the trigger character.
-			s.prefixRange.Start = ctx.Position
-			s.prefixRange.Start.Runes = ctx.Position.Runes
-			s.prefix = s.prefix[:0]
-		}
+	s.prefixRange = s.state.policy.PrefixRange(s.state.completor.Trigger(), s.state.triggerKind, ctx)
+	if editor != nil {
+		s.prefix = []rune(editor.ReadTextBetween(s.prefixRange.Start.Runes, ctx.Position.Runes))
+		return
 	}
+	s.prefix = s.prefix[:0]
 }
 
 // syncPrefix reads the current prefix from the editor buffer for an already active session.

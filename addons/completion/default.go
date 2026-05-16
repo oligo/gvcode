@@ -36,6 +36,10 @@ func (dc *DefaultCompletion) AddCompletor(completor gvcode.Completor, popup gvco
 
 	duplicatedKey := slices.ContainsFunc(dc.completors, func(cm *delegatedCompletor) bool {
 		tr := cm.Completor.Trigger()
+		if tr.KeyBinding.Name == "" {
+			// skip empty key biding
+			return false
+		}
 		return tr.KeyBinding.Name == trigger.KeyBinding.Name && tr.KeyBinding.Modifiers == trigger.KeyBinding.Modifiers
 	})
 	if duplicatedKey {
@@ -75,7 +79,7 @@ func (dc *DefaultCompletion) onKey(evt key.Event) {
 	}
 
 	ctx := dc.Editor.GetCompletionContext()
-	dc.session = newSession(cmp, keyTrigger)
+	dc.session = newSession(cmp, gvcode.KeyTrigger)
 	dc.updateCandidates(dc.session.Update(ctx, dc.Editor))
 }
 
@@ -94,12 +98,13 @@ func (dc *DefaultCompletion) OnText(ctx gvcode.CompletionContext) {
 	}
 
 	var completor *delegatedCompletor
-	var kind triggerKind
+	var kind gvcode.CompletionTriggerKind
 
 	for _, cmp := range dc.completors {
-		if canTrigger(cmp.Trigger(), ctx.Input) {
+		trigger := cmp.Trigger()
+		if policyForTrigger(trigger).CanStart(trigger, ctx) {
 			completor = cmp
-			kind = charTrigger
+			kind = gvcode.CharTrigger
 			break
 		}
 	}
@@ -208,25 +213,4 @@ func mergeRange(r1, r2 gvcode.EditRange) gvcode.EditRange {
 		result.End = r2.End
 	}
 	return result
-}
-
-func isSymbolChar(ch rune) bool {
-	if (ch >= 'a' && ch <= 'z') ||
-		(ch >= 'A' && ch <= 'Z') ||
-		(ch >= '0' && ch <= '9') ||
-		ch == '_' {
-		return true
-	}
-
-	return false
-}
-
-func canTrigger(tr gvcode.Trigger, input string) bool {
-	// Check explicit trigger characters first.
-	if slices.Contains(tr.Characters, input) {
-		return true
-	}
-
-	// Always allow symbol characters to trigger completion.
-	return isSymbolChar([]rune(input)[0])
 }

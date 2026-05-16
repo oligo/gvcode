@@ -61,10 +61,11 @@ func TestIsSymbolChar(t *testing.T) {
 	}
 }
 
-func TestCanTrigger(t *testing.T) {
+func TestDefaultTriggerPolicyCanStart(t *testing.T) {
 	tr := gvcode.Trigger{
 		Characters: []string{".", "::", "->"},
 	}
+	policy := DefaultTriggerPolicy{}
 
 	tests := []struct {
 		input    string
@@ -83,8 +84,35 @@ func TestCanTrigger(t *testing.T) {
 		{"!", false},
 	}
 	for _, tt := range tests {
-		if got := canTrigger(tr, tt.input); got != tt.expected {
-			t.Errorf("canTrigger(%q) = %v, want %v", tt.input, got, tt.expected)
+		ctx := gvcode.CompletionContext{Input: tt.input}
+		if got := policy.CanStart(tr, ctx); got != tt.expected {
+			t.Errorf("DefaultTriggerPolicy.CanStart(%q) = %v, want %v", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestExplicitTriggerPolicyCanStart(t *testing.T) {
+	tr := gvcode.Trigger{
+		Characters: []string{"@", "/"},
+	}
+	policy := ExplicitTriggerPolicy{}
+
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"@", true},
+		{"/", true},
+		{"a", false},
+		{"Z", false},
+		{"0", false},
+		{"_", false},
+		{".", false},
+	}
+	for _, tt := range tests {
+		ctx := gvcode.CompletionContext{Input: tt.input}
+		if got := policy.CanStart(tr, ctx); got != tt.expected {
+			t.Errorf("ExplicitTriggerPolicy.CanStart(%q) = %v, want %v", tt.input, got, tt.expected)
 		}
 	}
 }
@@ -132,7 +160,7 @@ func TestSessionUpdate_IdentTriggerReadsPrefix(t *testing.T) {
 
 	editor := newTestEditor("f", 1)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "f", Position: gvcode.Position{Runes: 1}}
 	result := s.Update(ctx, editor)
 
@@ -159,7 +187,7 @@ func TestSessionUpdate_NonIdentTriggerPrefixEmpty(t *testing.T) {
 
 	editor := newTestEditor("#", 1)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "#", Position: gvcode.Position{Runes: 1}}
 	result := s.Update(ctx, editor)
 
@@ -189,7 +217,7 @@ func TestSessionUpdate_SubsequentCharExtendsPrefix(t *testing.T) {
 	// Simulate typing "f" then "o" → text is "fo"
 	editor := newTestEditor("f", 1)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "f", Position: gvcode.Position{Runes: 1}}
 	s.Update(ctx, editor)
 
@@ -224,7 +252,7 @@ func TestSessionUpdate_BackspaceShrinksPrefix(t *testing.T) {
 	// Simulate typing "f" then "o" then backspace.
 	editor := newTestEditor("f", 1)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "f", Position: gvcode.Position{Runes: 1}}
 	s.Update(ctx, editor)
 
@@ -267,7 +295,7 @@ func TestSessionUpdate_CursorMoveWithinPrefixKeepsEnd(t *testing.T) {
 	// Simulate typing "f" then "o": prefix "fo", End at rune 2.
 	editor := newTestEditor("f", 1)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "f", Position: gvcode.Position{Runes: 1}}
 	s.Update(ctx, editor)
 
@@ -307,7 +335,7 @@ func TestSessionUpdate_BackspaceToEmptyCancels(t *testing.T) {
 
 	editor := newTestEditor("f", 1)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "f", Position: gvcode.Position{Runes: 1}}
 	s.Update(ctx, editor)
 
@@ -336,7 +364,7 @@ func TestSessionUpdate_TerminateChar(t *testing.T) {
 
 	editor := newTestEditor("f", 1)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "f", Position: gvcode.Position{Runes: 1}}
 	s.Update(ctx, editor)
 
@@ -375,7 +403,7 @@ func TestSessionUpdate_KeyTriggerEmptyPrefixStaysAlive(t *testing.T) {
 
 	editor := newTestEditor("", 0)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, keyTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.KeyTrigger)
 	result := s.Update(gvcode.CompletionContext{Input: "", Position: gvcode.Position{Runes: 0}}, editor)
 
 	if !s.IsValid() {
@@ -400,7 +428,7 @@ func TestSessionUpdate_NonIdentTriggerThenChar(t *testing.T) {
 	editor := newTestEditor("#t", 2)
 
 	// First Update: "#" triggers the session.
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "#", Position: gvcode.Position{Runes: 1}}
 	s.Update(ctx, editor)
 
@@ -432,7 +460,7 @@ func TestSessionUpdate_BackspaceAfterNonIdentTriggerCancels(t *testing.T) {
 	// "#text" then backspace all.
 	editor := newTestEditor("#text", 4)
 
-	s := newSession(&delegatedCompletor{Completor: mock}, charTrigger)
+	s := newSession(&delegatedCompletor{Completor: mock}, gvcode.CharTrigger)
 	ctx := gvcode.CompletionContext{Input: "#", Position: gvcode.Position{Runes: 1}}
 	s.Update(ctx, editor)
 
