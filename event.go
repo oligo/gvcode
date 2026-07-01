@@ -250,6 +250,14 @@ func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
 			e.updateSnippet(gtx, ke.Start, ke.End)
 		case key.EditEvent:
 			e.onTextInput(ke)
+		case key.CompositionEvent:
+			// Since v0.10.1, gio delivers IME composition event. During composition stage,
+			// range marks the current text range of composition. When composition confirmed/canceled,
+			// range becomes (-1, -1).
+			// When there is no IME for text input, no CompositionEvent is delivered.
+			e.ime.composition = key.Range(ke)
+			e.ime.isComposing = ke.Start != -1 && ke.Start != ke.End
+
 		case key.SelectionEvent:
 			e.scrollCaret = true
 			e.scroller.Stop()

@@ -88,8 +88,10 @@ type imeState struct {
 		rng   key.Range
 		caret key.Caret
 	}
-	snippet    key.Snippet
-	start, end int
+	snippet     key.Snippet
+	start, end  int
+	isComposing bool
+	composition key.Range
 }
 
 type EditorEvent interface {
@@ -279,6 +281,7 @@ func (e *Editor) layout(gtx layout.Context) layout.Dimensions {
 		}
 
 		e.paintText(gtx, textColor)
+		e.paintComposition(gtx, textColor)
 	}
 	if gtx.Enabled() {
 		e.paintCaret(gtx, textColor)
@@ -314,6 +317,16 @@ func (e *Editor) paintCaret(gtx layout.Context, material color.Color) {
 		return
 	}
 	e.text.PaintCaret(gtx, material.Op(gtx.Ops))
+}
+
+func (e *Editor) paintComposition(gtx layout.Context, material color.Color) {
+	e.initBuffer()
+	if !e.ime.isComposing {
+		return
+	}
+
+	e.text.PaintComposition(gtx, e.ime.composition, material.Op(gtx.Ops), "dash")
+
 }
 
 // Len is the length of the editor contents, in runes.

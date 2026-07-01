@@ -5,6 +5,8 @@ import (
 	"image/color"
 	"math"
 
+	"gioui.org/f32"
+	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -13,6 +15,7 @@ import (
 	"gioui.org/unit"
 	lt "github.com/oligo/gvcode/internal/layout"
 	"github.com/oligo/gvcode/internal/painter"
+	"github.com/oligo/gvcode/internal/stroke"
 )
 
 // calculateViewSize determines the size of the current visible content,
@@ -180,6 +183,63 @@ func (e *TextView) HighlightMatchingBrackets(gtx layout.Context, material op.Cal
 		paint.PaintOp{}.Add(gtx.Ops)
 		stroke.Pop()
 	}
+}
+
+func (e *TextView) PaintComposition(gtx layout.Context, rng key.Range, material op.CallOp, pattern string) {
+	if rng == (key.Range{}) || rng.Start < 0 || rng.End < 0 || rng.Start == rng.End {
+		return
+	}
+
+	localViewport := image.Rectangle{Max: e.viewSize}
+	docViewport := image.Rectangle{Max: e.viewSize}.Add(e.scrollOff)
+	defer clip.Rect(localViewport).Push(gtx.Ops).Pop()
+
+	e.regions = e.layouter.Locate(docViewport, rng.Start, rng.End, e.regions)
+	if len(e.regions) == 0 {
+		return
+	}
+
+	thickness := max(gtx.Dp(unit.Dp(1)), 1)
+
+	for _, region := range e.regions {
+		y := region.Bounds.Max.Y - max(region.Baseline/3, thickness)
+		underline := image.Rect(region.Bounds.Min.X, y, region.Bounds.Max.X, y+thickness)
+		underline = underline.Intersect(localViewport)
+		if underline.Empty() {
+			continue
+		}
+
+		switch pattern {
+
+		case "dash":
+			path := stroke.Path{}
+			path.Segments = append(path.Segments, stroke.MoveTo(f32.Pt(float32(underline.Min.X), float32(underline.Max.Y))))
+			path.Segments = append(path.Segments, stroke.LineTo(f32.Pt(float32(underline.Max.X), float32(underline.Max.Y))))
+
+			cl := stroke.Stroke{
+				Path:  path,
+				Width: float32(thickness),
+				Cap:   stroke.FlatCap,
+				Join:  stroke.BevelJoin,
+				Dashes: stroke.Dashes{
+					Dashes: []float32{3, 1},
+				},
+			}.Op(gtx.Ops).Push(gtx.Ops)
+
+			material.Add(gtx.Ops)
+			paint.PaintOp{}.Add(gtx.Ops)
+
+			cl.Pop()
+		default:
+			// simple underline
+			stack := clip.Rect(underline).Push(gtx.Ops)
+			material.Add(gtx.Ops)
+			paint.PaintOp{}.Add(gtx.Ops)
+			stack.Pop()
+		}
+
+	}
+
 }
 
 // caretCurrentLine returns the current paragraph that the carent is in.
