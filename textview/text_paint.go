@@ -202,7 +202,7 @@ func (e *TextView) PaintComposition(gtx layout.Context, rng key.Range, material 
 	thickness := max(gtx.Dp(unit.Dp(1)), 1)
 
 	for _, region := range e.regions {
-		y := region.Bounds.Max.Y - max(region.Baseline/3, thickness)
+		y := region.Bounds.Max.Y - max(region.Baseline*2/3, thickness) // 1/3 below the baseline.
 		underline := image.Rect(region.Bounds.Min.X, y, region.Bounds.Max.X, y+thickness)
 		underline = underline.Intersect(localViewport)
 		if underline.Empty() {
@@ -222,7 +222,7 @@ func (e *TextView) PaintComposition(gtx layout.Context, rng key.Range, material 
 				Cap:   stroke.FlatCap,
 				Join:  stroke.BevelJoin,
 				Dashes: stroke.Dashes{
-					Dashes: []float32{3, 1},
+					Dashes: []float32{4, 2},
 				},
 			}.Op(gtx.Ops).Push(gtx.Ops)
 
