@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -189,12 +190,40 @@ func (pt *PieceTable) insert(runeIndex int, text string) bool {
 }
 
 // Check if this insert action can be optimized by merging the input with previous one.
-// multiple characters input won't be merged.
+// The following rules are applied when deciding merging or not:
+//
+//   - multiple characters input won't be merged.
+//   - unicode space characters are not merged.
+//   - character class transitions: transitions between normal chars and punctuations/symbols.
+//
+// This prevent different chars from being undo as a unit, and similar chars can be combines
+// and undo as a unit.
 func (pt *PieceTable) tryAppendToLastPiece(runeIndex int, text string) bool {
 	if pt.lastAction != actionInsert ||
 		runeIndex != pt.lastActionEndIdx ||
-		pt.lastInsertPiece == nil ||
-		utf8.RuneCountInString(text) > 1 {
+		pt.lastInsertPiece == nil {
+		return false
+	}
+
+	r, size := utf8.DecodeRuneInString(text)
+	if size != len(text) {
+		// Either contains multiple runes or invalid UTF-8
+		return false
+	}
+
+	// Prevent unicode space character from merging.
+	if unicode.IsSpace(r) {
+		return false
+	}
+
+	// get last inserted rune
+	lastRune, _, err := pt.getBuf(pt.lastInsertPiece.source).ReadRuneAt(int64(pt.lastInsertPiece.byteOff + pt.lastInsertPiece.byteLength - 1))
+	if err != nil {
+		// FIXME: return error here?
+		return false
+	}
+	//
+	if isPunctuationOrSymbol(r) != isPunctuationOrSymbol(lastRune) {
 		return false
 	}
 
@@ -213,6 +242,11 @@ func (pt *PieceTable) tryAppendToLastPiece(runeIndex int, text string) bool {
 	return true
 }
 
+// Helper to catch brackets, operators, and punctuation
+func isPunctuationOrSymbol(r rune) bool {
+	return unicode.IsPunct(r) || unicode.IsSymbol(r)
+}
+
 func (pt *PieceTable) insertAtBoundary(runeIndex int, text string, oldPiece *piece) {
 	textRuneOff, textByteOff, textRunes := pt.addToBuffer(modify, []byte(text))
 
@@ -223,7 +257,6 @@ func (pt *PieceTable) insertAtBoundary(runeIndex int, text string, oldPiece *pie
 		byteOff:    textByteOff,
 		byteLength: len(text),
 	}
-	pt.lastInsertPiece = newPiece
 
 	// insertion is at the boundary of 2 pieces.
 	oldPieces := &pieceRange{
@@ -240,6 +273,7 @@ func (pt *PieceTable) insertAtBoundary(runeIndex int, text string, oldPiece *pie
 	pt.seqLength += textRunes
 	pt.seqBytes += len(text)
 	pt.recordAction(actionInsert, runeIndex+textRunes)
+	pt.lastInsertPiece = newPiece
 }
 
 func (pt *PieceTable) insertInMiddle(runeIndex int, text string, oldPiece *piece, inRuneOff int) {
@@ -252,7 +286,6 @@ func (pt *PieceTable) insertInMiddle(runeIndex int, text string, oldPiece *piece
 		byteOff:    textByteOff,
 		byteLength: len(text),
 	}
-	pt.lastInsertPiece = newPiece
 
 	// preserve the old pieces as a pieceRange, and push to the undo stack.
 	oldPieces := &pieceRange{
@@ -294,6 +327,7 @@ func (pt *PieceTable) insertInMiddle(runeIndex int, text string, oldPiece *piece
 	pt.seqLength += textRunes
 	pt.seqBytes += len(text)
 	pt.recordAction(actionInsert, runeIndex+textRunes)
+	pt.lastInsertPiece = newPiece
 }
 
 // undoRedo restores operation saved in src to dest. If there is a valid batchId, the src stack
@@ -547,9 +581,14 @@ func (pt *PieceTable) UnGroupOp() {
 }
 
 func (pt *PieceTable) unGroupOp() {
+	if pt.currentBatch == nil {
+		return
+	}
+
 	*pt.currentBatch--
 	if *pt.currentBatch <= 0 {
 		pt.currentBatch = nil
+
 	}
 }
 
