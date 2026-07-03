@@ -634,23 +634,41 @@ func (e *Editor) onDeleteBackward() {
 	if prev == space {
 		// Find the current paragraph.
 		var lineStart int
+		var hasNonSpaceOrTab bool
+
 		e.scratch, lineStart, _ = e.text.SelectedLineText(e.scratch)
-		leading := []rune(string(e.scratch))[:end-lineStart]
-		hasNonSpaceOrTab := strings.ContainsFunc(string(leading), func(r rune) bool {
-			return r != space && r != '\t'
-		})
+
+		remaining := e.scratch
+		runeCnt := 0
+		bytesOff := 0
+		for len(remaining) > 0 && runeCnt < end-lineStart {
+			r, sz := utf8.DecodeRune(remaining)
+			if r != space && r != '\t' {
+				hasNonSpaceOrTab = true
+				break
+			}
+			remaining = remaining[sz:]
+			runeCnt++
+			bytesOff += sz
+		}
+
 		if hasNonSpaceOrTab {
 			return
 		}
 
+		// calculate how many spaces to delete in a key press.
 		moves := 0
-		for i := len(leading) - 1; i >= 0; i-- {
-			if leading[i] == space && moves < e.text.TabWidth {
-				moves++
-			} else {
+		leading := e.scratch[:bytesOff]
+		for len(leading) > 0 {
+			r, sz := utf8.DecodeLastRune(leading)
+			if r == '\t' || moves >= e.text.TabWidth {
 				break
 			}
+
+			moves++
+			leading = leading[:len(leading)-sz]
 		}
+
 		if moves > 0 {
 			e.text.MoveCaret(0, -moves)
 		}
