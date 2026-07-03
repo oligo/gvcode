@@ -384,7 +384,27 @@ func (e *Editor) onTab(k key.Event) EditorEvent {
 }
 
 func (e *Editor) onTextInput(ke key.EditEvent) {
-	if e.mode == ModeReadOnly || len(ke.Text) <= 0 {
+	if e.mode == ModeReadOnly {
+		return
+	}
+
+	// When the input is from IME, backspace key event will not go to Gio.
+	// Instead the editor will receive updated IME pre-edit text vai EditEvent,
+	// until all pre-edit characters are deleted, so we need to handle empty input here.
+	if ke.Text == "" {
+		e.replace(ke.Range.Start, ke.Range.End, "")
+
+		e.scrollCaret = true
+		e.scroller.Stop()
+		// Reset caret xoff.
+		e.text.MoveCaret(0, 0)
+		// record lastInput for auto-complete.
+		e.lastInput = &ke
+
+		// If there is an ongoing snippet context, check if the edit is inside of
+		// a tabstop.
+		finalStart, finalEnd := e.Selection()
+		e.snippetCtx.OnInsertAt(finalStart, finalEnd)
 		return
 	}
 
@@ -393,7 +413,12 @@ func (e *Editor) onTextInput(ke key.EditEvent) {
 	}
 
 	// check if the input character is a bracket or a quote.
-	r := []rune(ke.Text)[0]
+	r, sz := utf8.DecodeRuneInString(ke.Text)
+	if sz == 0 {
+		// invalid input
+		return
+	}
+
 	counterpart, isOpening := e.text.BracketsQuotes.GetCounterpart(r)
 
 	if counterpart > 0 && isOpening {
