@@ -250,6 +250,40 @@ func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
 			e.updateSnippet(gtx, ke.Start, ke.End)
 		case key.EditEvent:
 			e.onTextInput(ke)
+		case key.CompositionEvent:
+			// Since v0.10.1, gio delivers IME composition event. During composition stage,
+			// range marks the current text range of composition. When composition confirmed/canceled,
+			// range becomes (-1, -1).
+			// When there is no IME for text input, no CompositionEvent is delivered.
+			e.ime.composition = key.Range(ke)
+
+			isStart := false
+			isFinish := false
+
+			if ke.Start != -1 && ke.Start != ke.End {
+				if !e.ime.isComposing {
+					isStart = true
+				}
+				e.ime.isComposing = true
+			} else {
+				if e.ime.isComposing {
+					isFinish = true
+				}
+				e.ime.isComposing = false
+			}
+
+			// GroupOp and UnGroupOp must be paired.
+			if isStart {
+				// composition started, ensure the undo transaction has started, and all text of a IME composition
+				// can be undone in a batch.
+				e.buffer.GroupOp()
+			}
+
+			if isFinish {
+				// composition is done, seal the undo transaction.
+				e.buffer.UnGroupOp()
+			}
+
 		case key.SelectionEvent:
 			e.scrollCaret = true
 			e.scroller.Stop()
