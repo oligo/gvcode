@@ -1,13 +1,78 @@
 package gvcode
 
 import (
+	"image"
+	"strings"
 	"testing"
 
+	"gioui.org/io/input"
+	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/text"
 	"gioui.org/unit"
 	"github.com/oligo/gvcode/textview"
 )
+
+func BenchmarkDeleteBackwardLargeDocument(b *testing.B) {
+	doc := strings.Repeat("func main() { println(\"hello\") }\n", 5000)
+	editor := &Editor{}
+	editor.WithOptions(WithTextSize(unit.Sp(14)))
+	editor.SetText(doc)
+	gtx := layout.Context{Constraints: layout.Exact(image.Pt(1200, 800))}
+	editor.text.Layout(gtx, text.NewShaper())
+	editor.SetCaret(editor.Len(), editor.Len())
+
+	b.ResetTimer()
+	for range b.N {
+		editor.Delete(-1)
+	}
+}
+
+func TestDeleteBackwardEmitsOneChangeEvent(t *testing.T) {
+	editor := &Editor{}
+	editor.SetText("abc")
+	editor.SetCaret(editor.Len(), editor.Len())
+
+	router := new(input.Router)
+	gtx := layout.Context{Ops: new(op.Ops), Source: router.Source()}
+	editor.Update(gtx)
+	router.Frame(new(op.Ops))
+
+	router.Source().Execute(key.FocusCmd{Tag: editor})
+	router.Queue(key.Event{Name: key.NameDeleteBackward, State: key.Press})
+
+	gtx.Source = router.Source()
+	changes := 0
+	for {
+		evt, ok := editor.Update(gtx)
+		if !ok {
+			break
+		}
+		if _, ok := evt.(ChangeEvent); ok {
+			changes++
+		}
+	}
+
+	if changes != 1 {
+		t.Fatalf("DeleteBackward emitted %d ChangeEvents, want 1", changes)
+	}
+	if got := editor.Len(); got != 2 {
+		t.Fatalf("DeleteBackward left %d runes, want 2", got)
+	}
+}
+
+func TestIsChangeEventAcceptsValueAndPointer(t *testing.T) {
+	if !isChangeEvent(ChangeEvent{}) {
+		t.Fatal("value ChangeEvent was not recognized")
+	}
+	if !isChangeEvent(&ChangeEvent{}) {
+		t.Fatal("pointer ChangeEvent was not recognized")
+	}
+	if isChangeEvent(SelectEvent{}) {
+		t.Fatal("SelectEvent was recognized as a ChangeEvent")
+	}
+}
 
 func TestOnDeleteBackward_Indentation(t *testing.T) {
 	setup := func(input string, cursorPos, tabWidth int) *Editor {

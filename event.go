@@ -41,11 +41,10 @@ func (e *Editor) processEvents(gtx layout.Context) (ev EditorEvent, ok bool) {
 			}
 		}
 
-		switch ev.(type) {
-		case ChangeEvent:
+		if isChangeEvent(ev) {
 			e.wordHighlighter.MarkActive(false)
 			e.updateCompletor()
-		case SelectEvent:
+		} else if _, ok := ev.(SelectEvent); ok {
 			e.updateCompletor()
 		}
 	}()
@@ -215,6 +214,11 @@ func (e *Editor) processKey(gtx layout.Context) (EditorEvent, bool) {
 	}
 
 	if evt := e.processCommands(gtx); evt != nil {
+		// The command already reported this change; consume the buffer flag so
+		// the next Update call does not report it again.
+		if isChangeEvent(evt) {
+			e.text.Changed()
+		}
 		return evt, true
 	}
 
@@ -223,6 +227,15 @@ func (e *Editor) processKey(gtx layout.Context) (EditorEvent, bool) {
 	}
 
 	return nil, false
+}
+
+func isChangeEvent(evt EditorEvent) bool {
+	switch evt.(type) {
+	case ChangeEvent, *ChangeEvent:
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
