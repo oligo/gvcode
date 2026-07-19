@@ -120,7 +120,7 @@ func TestIsChangeEventAcceptsValueAndPointer(t *testing.T) {
 	}
 }
 
-func TestEditEventsEmitSeparateChangeEvents(t *testing.T) {
+func TestEditEventsEmitOneChangeEventPerFrame(t *testing.T) {
 	editor := &Editor{}
 	editor.SetText("")
 
@@ -147,8 +147,8 @@ func TestEditEventsEmitSeparateChangeEvents(t *testing.T) {
 		}
 	}
 
-	if changes != 2 {
-		t.Fatalf("two EditEvents emitted %d ChangeEvents, want 2", changes)
+	if changes != 1 {
+		t.Fatalf("two EditEvents emitted %d ChangeEvents, want 1", changes)
 	}
 	if got := editor.Text(); got != "ab" {
 		t.Fatalf("text = %q, want %q", got, "ab")
@@ -189,6 +189,23 @@ func TestAutoInsertionTracksEditsBeforeClosingRune(t *testing.T) {
 	start, end := editor.Selection()
 	if start != 3 || end != 3 {
 		t.Fatalf("selection = (%d, %d), want (3, 3)", start, end)
+	}
+}
+
+func TestAutoInsertionTracksPairAfterEarlierEdit(t *testing.T) {
+	editor := &Editor{}
+	editor.WithOptions(WithTextSize(unit.Sp(14)))
+	editor.SetText("")
+	editor.text.Layout(layout.Context{Constraints: layout.Exact(image.Pt(800, 600))}, text.NewShaper())
+
+	editor.onTextInput(key.EditEvent{Range: key.Range{Start: 0, End: 0}, Text: "("})
+	editor.onTextInput(key.EditEvent{Range: key.Range{Start: 0, End: 0}, Text: "x"})
+	if deleted := editor.Delete(-1); deleted != 2 {
+		t.Fatalf("deleted runes = %d, want 2", deleted)
+	}
+
+	if got := editor.Text(); got != "x" {
+		t.Fatalf("text = %q, want %q", got, "x")
 	}
 }
 

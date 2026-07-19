@@ -262,9 +262,6 @@ func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
 			e.updateSnippet(gtx, ke.Start, ke.End)
 		case key.EditEvent:
 			e.onTextInput(ke)
-			if e.text.Changed() {
-				return ChangeEvent{}
-			}
 		case key.CompositionEvent:
 			// Since v0.10.1, gio delivers IME composition event. During composition stage,
 			// range marks the current text range of composition. When composition confirmed/canceled,
