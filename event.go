@@ -254,8 +254,7 @@ func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
 
 		switch ke := evt.(type) {
 		case key.FocusEvent:
-			// Reset IME state.
-			e.ime.imeState = imeState{}
+			e.resetIME()
 			if ke.Focus && e.mode != ModeReadOnly {
 				gtx.Execute(key.SoftKeyboardCmd{Show: true})
 			}
@@ -263,6 +262,9 @@ func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
 			e.updateSnippet(gtx, ke.Start, ke.End)
 		case key.EditEvent:
 			e.onTextInput(ke)
+			if e.text.Changed() {
+				return ChangeEvent{}
+			}
 		case key.CompositionEvent:
 			// Since v0.10.1, gio delivers IME composition event. During composition stage,
 			// range marks the current text range of composition. When composition confirmed/canceled,
@@ -494,9 +496,6 @@ func (e *Editor) onTextInput(ke key.EditEvent) {
 			e.text.MoveCaret(-1, -1)
 			start, _ := e.text.Selection() // start and end should be the same
 			e.autoInsertions[start] = counterpart
-		} else {
-			// If only the opening char was inserted, ensure it's not tracked
-			delete(e.autoInsertions, ke.Range.Start)
 		}
 
 	} else if counterpart > 0 {
@@ -513,7 +512,6 @@ func (e *Editor) onTextInput(ke key.EditEvent) {
 			e.replace(ke.Range.Start, ke.Range.End, ke.Text)
 		}
 	} else {
-		delete(e.autoInsertions, ke.Range.Start)
 		e.replace(ke.Range.Start, ke.Range.End, ke.Text)
 	}
 
