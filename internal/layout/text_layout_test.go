@@ -80,6 +80,24 @@ func TestCachedLayoutClearsDiscardedStorage(t *testing.T) {
 	}
 }
 
+func TestLayoutReadsParagraphLargerThanBuffer(t *testing.T) {
+	longLine := strings.Repeat("x", 5000)
+	buf := buffer.NewPieceTable([]byte(longLine + "\ntail"))
+	tl := NewTextLayout(buf)
+	params := text.Parameters{PxPerEm: 14, MaxWidth: 400}
+	tl.Layout(text.NewShaper(), &params, 4, false)
+
+	if len(tl.paragraphs) != 2 {
+		t.Fatalf("paragraph count = %d, want 2", len(tl.paragraphs))
+	}
+	if got := tl.paragraphs[0].text; got != longLine+"\n" {
+		t.Fatalf("first paragraph length = %d, want %d", len(got), len(longLine)+1)
+	}
+	if got := tl.paragraphs[1].text; got != "tail" {
+		t.Fatalf("last paragraph = %q, want %q", got, "tail")
+	}
+}
+
 func BenchmarkLayout(b *testing.B) {
 	buf := buffer.NewTextSource()
 	buf.SetText([]byte("a fox jumps over the lazy dog"))
