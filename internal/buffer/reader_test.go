@@ -1,6 +1,8 @@
 package buffer
 
 import (
+	"errors"
+	"io"
 	"testing"
 	"unicode/utf8"
 )
@@ -68,4 +70,9 @@ func TestReadRuneAt(t *testing.T) {
 		t.Fail()
 	}
 
+	for _, off := range []int{-1, src.Len()} {
+		if _, err := src.ReadRuneAt(off); !errors.Is(err, io.EOF) {
+			t.Errorf("ReadRuneAt(%d) error = %v, want io.EOF", off, err)
+		}
+	}
 }

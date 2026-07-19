@@ -31,6 +31,10 @@ func (pt *PieceTable) ReadRuneAt(runeOff int) (rune, error) {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
 
+	if runeOff < 0 || runeOff >= pt.seqLength {
+		return 0, io.EOF
+	}
+
 	n, off, _ := pt.pieces.FindPiece(runeOff)
 	if n == nil {
 		return 0, io.EOF
