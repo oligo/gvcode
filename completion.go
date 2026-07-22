@@ -81,6 +81,13 @@ type CompletionCandidate struct {
 	// should be interpreted as plain text or a snippet. The possible values are
 	// PlainText or Snippet.
 	TextFormat string
+
+	// A string that should be used when comparing this item with other items. When
+	// it's not provided, Label is used.
+	SortText string
+	// A string that should be used when filtering a set of completion items. When
+	// it's not provided, Label is used.
+	FilterText string
 }
 
 // TextEdit is the text with range info to be

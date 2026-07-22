@@ -379,6 +379,9 @@ func (e *Editor) GetReader() io.ReadSeeker {
 // before populate the internal text buffer.
 func (e *Editor) SetText(s string) {
 	e.initBuffer()
+	e.resetIME()
+	clear(e.autoInsertions)
+	e.lastInput = nil
 
 	indent, _, size := GuessIndentation(s)
 	e.text.SoftTab = indent == Spaces
@@ -387,10 +390,15 @@ func (e *Editor) SetText(s string) {
 	e.lineEnding = DetectLineEnding(s)
 
 	e.text.SetText(StripLineEnding(s))
-	e.ime.start = 0
-	e.ime.end = 0
 	// Reset xoff and move the caret to the beginning.
 	e.SetCaret(0, 0)
+}
+
+func (e *Editor) resetIME() {
+	if e.ime.isComposing {
+		e.buffer.UnGroupOp()
+	}
+	e.ime.imeState = imeState{}
 }
 
 // CaretPos returns the line & column numbers of the caret.
@@ -585,6 +593,18 @@ func (e *Editor) replace(start, end int, s string) int {
 
 	sc := e.text.Replace(start, end, s)
 	newEnd := start + sc
+	if len(e.autoInsertions) > 0 && (start != end || sc != 0) {
+		updated := make(map[int]rune, len(e.autoInsertions))
+		for pos, r := range e.autoInsertions {
+			switch {
+			case pos < start:
+				updated[pos] = r
+			case pos >= end:
+				updated[pos+newEnd-end] = r
+			}
+		}
+		e.autoInsertions = updated
+	}
 	adjust := func(pos int) int {
 		switch {
 		case newEnd < pos && pos <= end:

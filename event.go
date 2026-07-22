@@ -41,11 +41,10 @@ func (e *Editor) processEvents(gtx layout.Context) (ev EditorEvent, ok bool) {
 			}
 		}
 
-		switch ev.(type) {
-		case ChangeEvent:
+		if isChangeEvent(ev) {
 			e.wordHighlighter.MarkActive(false)
 			e.updateCompletor()
-		case SelectEvent:
+		} else if _, ok := ev.(SelectEvent); ok {
 			e.updateCompletor()
 		}
 	}()
@@ -215,6 +214,11 @@ func (e *Editor) processKey(gtx layout.Context) (EditorEvent, bool) {
 	}
 
 	if evt := e.processCommands(gtx); evt != nil {
+		// The command already reported this change; consume the buffer flag so
+		// the next Update call does not report it again.
+		if isChangeEvent(evt) {
+			e.text.Changed()
+		}
 		return evt, true
 	}
 
@@ -223,6 +227,15 @@ func (e *Editor) processKey(gtx layout.Context) (EditorEvent, bool) {
 	}
 
 	return nil, false
+}
+
+func isChangeEvent(evt EditorEvent) bool {
+	switch evt.(type) {
+	case ChangeEvent, *ChangeEvent:
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
@@ -241,8 +254,7 @@ func (e *Editor) processEditEvents(gtx layout.Context) EditorEvent {
 
 		switch ke := evt.(type) {
 		case key.FocusEvent:
-			// Reset IME state.
-			e.ime.imeState = imeState{}
+			e.resetIME()
 			if ke.Focus && e.mode != ModeReadOnly {
 				gtx.Execute(key.SoftKeyboardCmd{Show: true})
 			}
@@ -493,9 +505,6 @@ func (e *Editor) onTextInput(ke key.EditEvent) {
 			e.text.MoveCaret(-1, -1)
 			start, _ := e.text.Selection() // start and end should be the same
 			e.autoInsertions[start] = counterpart
-		} else {
-			// If only the opening char was inserted, ensure it's not tracked
-			delete(e.autoInsertions, ke.Range.Start)
 		}
 
 	} else if counterpart > 0 {
@@ -512,7 +521,6 @@ func (e *Editor) onTextInput(ke key.EditEvent) {
 			e.replace(ke.Range.Start, ke.Range.End, ke.Text)
 		}
 	} else {
-		delete(e.autoInsertions, ke.Range.Start)
 		e.replace(ke.Range.Start, ke.Range.End, ke.Text)
 	}
 

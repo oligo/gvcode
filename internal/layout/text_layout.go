@@ -6,8 +6,8 @@ import (
 	"image"
 	"io"
 	"math"
+	"slices"
 	"sort"
-	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/text"
@@ -16,13 +16,29 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
+type paragraphLayout struct {
+	text      string
+	last      bool
+	runes     int
+	graphemes []int
+	lines     []Line
+}
+
 type TextLayout struct {
-	src        buffer.TextSource
-	reader     *bufio.Reader
-	params     text.Parameters
-	spaceGlyph text.Glyph
-	wrapper    lineWrapper
-	seg        segmenter.Segmenter
+	src          buffer.TextSource
+	reader       *bufio.Reader
+	params       text.Parameters
+	spaceGlyph   text.Glyph
+	wrapper      lineWrapper
+	seg          segmenter.Segmenter
+	shaper       *text.Shaper
+	glyphCache   map[string][]text.Glyph
+	nextCache    map[string][]text.Glyph
+	paragraphs   []paragraphLayout
+	nextParas    []paragraphLayout
+	paragraphBuf []byte
+	tabWidth     int
+	wrapLine     bool
 
 	// Positions contain all possible caret positions, sorted by rune index.
 	Positions []CombinedPos
@@ -41,8 +57,10 @@ type TextLayout struct {
 
 func NewTextLayout(src buffer.TextSource) TextLayout {
 	return TextLayout{
-		src:    src,
-		reader: bufio.NewReader(buffer.NewReader(src)),
+		src:        src,
+		reader:     bufio.NewReader(buffer.NewReader(src)),
+		glyphCache: make(map[string][]text.Glyph),
+		nextCache:  make(map[string][]text.Glyph),
 	}
 }
 
@@ -73,77 +91,177 @@ func (tl *TextLayout) reset() {
 	tl.baseline = 0
 }
 
+func (tl *TextLayout) readParagraph() ([]byte, error) {
+	var paragraph []byte
+	for {
+		chunk, err := tl.reader.ReadSlice('\n')
+		if len(paragraph) > 0 || err == bufio.ErrBufferFull {
+			if len(paragraph) == 0 {
+				tl.paragraphBuf = tl.paragraphBuf[:0]
+			}
+			tl.paragraphBuf = append(tl.paragraphBuf, chunk...)
+			paragraph = tl.paragraphBuf
+		} else {
+			return chunk, err
+		}
+		if err != bufio.ErrBufferFull {
+			return paragraph, err
+		}
+	}
+}
+
 func (tl *TextLayout) Layout(shaper *text.Shaper, params *text.Parameters, tabWidth int, wrapLine bool) layout.Dimensions {
+	cacheValid := tl.shaper == shaper && tl.params == *params && tl.tabWidth == tabWidth && tl.wrapLine == wrapLine
+	if !cacheValid {
+		clear(tl.glyphCache)
+		tl.paragraphs = tl.paragraphs[:0]
+	}
+	tl.shaper = shaper
+	tl.tabWidth = tabWidth
+	tl.wrapLine = wrapLine
+	clear(tl.nextCache)
+	tl.nextParas = tl.nextParas[:0]
+	oldPositions := tl.Positions
+	oldParagraphs := tl.Paragraphs
 	tl.reset()
 	tl.params = *params
-	paragraphCount := tl.src.Lines()
 
 	if shaper == nil {
 		tl.fakeLayout()
 	} else {
 		tl.spaceGlyph, _ = tl.shapeRune(shaper, tl.params, '\u0020')
-		if paragraphCount > 0 {
+		cleanPrefix := cacheValid
+		cleanParagraphs := 0
+		cleanLines := 0
+		totalBytes := tl.src.Size()
+		if totalBytes > 0 {
 			runeOffset := 0
 			currentIdx := 0
+			bytesRead := 0
 
-			for {
-				text, readErr := tl.reader.ReadString('\n')
-				// the last line returned by ReadBytes returns EOF and may have remaining bytes to process.
-				if len(text) > 0 {
-					tl.layoutNextParagraph(shaper, text, paragraphCount-1 == currentIdx, tabWidth, wrapLine)
+			for bytesRead < totalBytes {
+				paragraph, err := tl.readParagraph()
+				if len(paragraph) == 0 {
+					break
+				}
+				bytesRead += len(paragraph)
+				isLastParagraph := bytesRead >= totalBytes || err != nil
+				runes, reused := tl.layoutNextParagraph(shaper, paragraph, currentIdx, isLastParagraph, runeOffset, tabWidth, wrapLine)
+				runeOffset += runes
+				currentIdx++
 
-					paragraphRunes := []rune(text)
-					tl.indexGraphemeClusters(paragraphRunes, runeOffset)
-					runeOffset += len(paragraphRunes)
-					currentIdx++
+				if cleanPrefix && reused {
+					cleanParagraphs++
+					cleanLines += len(tl.nextParas[len(tl.nextParas)-1].lines)
+				} else {
+					cleanPrefix = false
 				}
 
-				if readErr != nil {
+				if isLastParagraph {
 					break
 				}
 			}
 		} else {
-			tl.layoutNextParagraph(shaper, "", true, tabWidth, wrapLine)
+			_, reused := tl.layoutNextParagraph(shaper, nil, 0, true, 0, tabWidth, wrapLine)
+			if cleanPrefix && reused {
+				cleanParagraphs = 1
+				cleanLines = len(tl.nextParas[0].lines)
+			}
 		}
+		tl.calculateXOffsets(cleanLines)
+		tl.calculateYOffsets(cleanLines)
 
-		tl.calculateXOffsets()
-		tl.calculateYOffsets()
-
-		// build position index
-		for idx, line := range tl.Lines {
+		positionPrefix := sort.Search(len(oldPositions), func(i int) bool {
+			return oldPositions[i].LineCol.Line >= cleanLines
+		})
+		tl.Positions = oldPositions[:positionPrefix]
+		for idx := cleanLines; idx < len(tl.Lines); idx++ {
+			line := tl.Lines[idx]
 			tl.indexGlyphs(idx, line)
-			tl.updateBounds(line)
-			// log.Printf("line[%d]: %s", idx, line)
-
 		}
 
-		tl.trackLines(tl.Lines)
+		for _, line := range tl.Lines {
+			tl.updateBounds(line)
+		}
+
+		cleanTrackedParagraphs := cleanParagraphs
+		if cleanLines == len(tl.Lines) {
+			cleanTrackedParagraphs = len(oldParagraphs)
+		}
+		tl.Paragraphs = oldParagraphs[:cleanTrackedParagraphs]
+		if cleanLines < len(tl.Lines) {
+			tl.trackLines(tl.Lines[cleanLines:])
+		}
+
+		lineIdx := cleanLines
+		for idx := cleanParagraphs; idx < len(tl.nextParas); idx++ {
+			nextLine := lineIdx + len(tl.nextParas[idx].lines)
+			copy(tl.nextParas[idx].lines, tl.Lines[lineIdx:nextLine])
+			lineIdx = nextLine
+		}
 	}
+	tl.glyphCache, tl.nextCache = tl.nextCache, tl.glyphCache
+	tl.paragraphs, tl.nextParas = tl.nextParas, tl.paragraphs
+	clear(tl.nextCache)
+	clear(tl.nextParas)
+	tl.nextParas = tl.nextParas[:0]
+	clear(tl.paragraphs[len(tl.paragraphs):cap(tl.paragraphs)])
+	clear(tl.Lines[len(tl.Lines):cap(tl.Lines)])
 
 	dims := layout.Dimensions{Size: tl.bounds.Size()}
 	dims.Baseline = dims.Size.Y - tl.baseline
 	return dims
 }
 
-func (tl *TextLayout) layoutNextParagraph(shaper *text.Shaper, paragraph string, isLastParagrah bool, tabWidth int, wrapLine bool) {
+func (tl *TextLayout) layoutNextParagraph(shaper *text.Shaper, paragraph []byte, paragraphIdx int, isLastParagrah bool, runeOffset int, tabWidth int, wrapLine bool) (int, bool) {
+	if paragraphIdx < len(tl.paragraphs) {
+		cached := tl.paragraphs[paragraphIdx]
+		if cached.text == string(paragraph) && cached.last == isLastParagrah {
+			tl.Lines = append(tl.Lines, cached.lines...)
+			tl.appendGraphemes(cached.graphemes, runeOffset)
+			tl.nextParas = append(tl.nextParas, cached)
+			return cached.runes, true
+		}
+	}
+
+	paragraphText := string(paragraph)
+	paragraphRunes := []rune(paragraphText)
+	graphemes := tl.graphemeOffsets(paragraphRunes)
+	tl.appendGraphemes(graphemes, runeOffset)
+
 	params := tl.params
 	maxWidth := params.MaxWidth
 	params.MaxWidth = 1e6
 	if !wrapLine {
 		maxWidth = params.MaxWidth
 	}
-	shaper.LayoutString(params, paragraph)
+	glyphs, ok := tl.glyphCache[paragraphText]
+	if !ok {
+		shaper.LayoutString(params, paragraphText)
+		for {
+			glyph, ok := shaper.NextGlyph()
+			if !ok {
+				break
+			}
+			glyphs = append(glyphs, glyph)
+		}
+	}
+	tl.nextCache[paragraphText] = glyphs
 
-	lines := tl.wrapParagraph(glyphIter{shaper: shaper}, []rune(paragraph), maxWidth, tabWidth, &tl.spaceGlyph)
-	if strings.HasSuffix(paragraph, "\n") && len(lines) > 0 && !isLastParagrah {
+	lines := tl.wrapper.WrapParagraph(slices.Values(glyphs), paragraphRunes, maxWidth, tabWidth, &tl.spaceGlyph)
+	if len(paragraph) > 0 && paragraph[len(paragraph)-1] == '\n' && len(lines) > 0 && !isLastParagrah {
 		lines = lines[:len(lines)-1]
 	}
 
 	tl.Lines = append(tl.Lines, lines...)
-}
-
-func (tl *TextLayout) wrapParagraph(glyphs glyphIter, paragraph []rune, maxWidth int, tabWidth int, spaceGlyph *text.Glyph) []Line {
-	return tl.wrapper.WrapParagraph(glyphs.All(), paragraph, maxWidth, tabWidth, spaceGlyph)
+	tl.nextParas = append(tl.nextParas, paragraphLayout{
+		text:      paragraphText,
+		last:      isLastParagrah,
+		runes:     len(paragraphRunes),
+		graphemes: graphemes,
+		lines:     lines,
+	})
+	return len(paragraphRunes), false
 }
 
 func (tl *TextLayout) fakeLayout() {
@@ -168,26 +286,35 @@ func (tl *TextLayout) fakeLayout() {
 	}
 }
 
-func (tl *TextLayout) calculateYOffsets() {
-	if len(tl.Lines) <= 0 {
+func (tl *TextLayout) calculateYOffsets(startLine int) {
+	if startLine >= len(tl.Lines) {
 		return
 	}
 
 	lineHeight := tl.calcLineHeight(&tl.params)
-	// Ceil the first value to ensure that we don't baseline it too close to the top of the
-	// viewport and cut off the top pixel.
-	currentY := tl.Lines[0].Ascent.Ceil()
-	for i := range tl.Lines {
-		if i > 0 {
+	currentY := 0
+	if startLine == 0 {
+		// Keep the first baseline far enough from the top to avoid clipping.
+		currentY = tl.Lines[0].Ascent.Ceil()
+	} else {
+		currentY = tl.Lines[startLine-1].YOff + lineHeight.Round()
+	}
+	for i := startLine; i < len(tl.Lines); i++ {
+		if i > startLine {
 			currentY += lineHeight.Round()
 		}
 		tl.Lines[i].adjustYOff(currentY)
 	}
 }
 
-func (tl *TextLayout) calculateXOffsets() {
+func (tl *TextLayout) calculateXOffsets(startLine int) {
 	runeOff := 0
-	for i, line := range tl.Lines {
+	if startLine > 0 {
+		previous := tl.Lines[startLine-1]
+		runeOff = previous.RuneOff + previous.Runes
+	}
+	for i := startLine; i < len(tl.Lines); i++ {
+		line := tl.Lines[i]
 		alignOff := tl.params.Alignment.Align(tl.params.Locale.Direction, line.Width, tl.params.MaxWidth)
 		tl.Lines[i].recompute(alignOff, runeOff)
 		runeOff += line.Runes
@@ -204,24 +331,28 @@ func (tl *TextLayout) shapeRune(shaper *text.Shaper, params text.Parameters, r r
 	return glyph, nil
 }
 
-func (tl *TextLayout) indexGraphemeClusters(paragraph []rune, runeOffset int) {
+func (tl *TextLayout) graphemeOffsets(paragraph []rune) []int {
+	if len(paragraph) == 0 {
+		return nil
+	}
+
+	offsets := []int{0}
 	tl.seg.Init(paragraph)
 	iter := tl.seg.GraphemeIterator()
-	if len(tl.Graphemes) == 0 {
-		if iter.Next() {
-			grapheme := iter.Grapheme()
-			tl.Graphemes = append(tl.Graphemes,
-				runeOffset+grapheme.Offset,
-				runeOffset+grapheme.Offset+len(grapheme.Text),
-			)
-		}
-	}
-
 	for iter.Next() {
 		grapheme := iter.Grapheme()
-		tl.Graphemes = append(tl.Graphemes, runeOffset+grapheme.Offset+len(grapheme.Text))
+		offsets = append(offsets, grapheme.Offset+len(grapheme.Text))
 	}
+	return offsets
+}
 
+func (tl *TextLayout) appendGraphemes(offsets []int, runeOffset int) {
+	for _, offset := range offsets {
+		offset += runeOffset
+		if len(tl.Graphemes) == 0 || tl.Graphemes[len(tl.Graphemes)-1] != offset {
+			tl.Graphemes = append(tl.Graphemes, offset)
+		}
+	}
 }
 
 func (tl *TextLayout) updateBounds(line Line) {

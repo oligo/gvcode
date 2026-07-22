@@ -12,6 +12,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"gioui.org/app"
 	"gioui.org/io/key"
@@ -47,11 +49,11 @@ type EditorApp struct {
 	diffProvider *providers.VCSDiffProvider
 	diffPopup    *diff.DiffPopup
 	differ       *diff.GitDiff
+	refreshAt    time.Time
+	refreshDirty bool
 }
 
-const (
-	syntaxPattern = "package|import|type|func|struct|for|var|switch|case|if|else"
-)
+var syntaxPattern = regexp.MustCompile("package|import|type|func|struct|for|var|switch|case|if|else")
 
 func (ed *EditorApp) run() error {
 
@@ -79,13 +81,8 @@ func (ed *EditorApp) layout(gtx C, th *material.Theme) D {
 
 		switch evt.(type) {
 		case gvcode.ChangeEvent:
-			tokens := HightlightTextByPattern(ed.state.Text(), syntaxPattern)
-			ed.state.SetSyntaxTokens(tokens...)
-
-			// Parse git diff for the current file and update the diff provider
-			if hunks := ed.differ.ParseDiff([]byte(ed.state.Text())); len(hunks) > 0 {
-				ed.diffProvider.UpdateDiff(hunks)
-			}
+			ed.refreshDirty = true
+			ed.refreshAt = gtx.Now.Add(150 * time.Millisecond)
 
 		case gvcode.GutterEventWrapper:
 			wrapper := evt.(gvcode.GutterEventWrapper)
@@ -98,6 +95,16 @@ func (ed *EditorApp) layout(gtx C, th *material.Theme) D {
 				}
 			}
 
+		}
+	}
+	if ed.refreshDirty {
+		if gtx.Now.Before(ed.refreshAt) {
+			gtx.Execute(op.InvalidateCmd{At: ed.refreshAt})
+		} else {
+			text := ed.state.Text()
+			ed.state.SetSyntaxTokens(HightlightTextByPattern(text, syntaxPattern)...)
+			ed.diffProvider.UpdateDiff(ed.differ.ParseDiff([]byte(text)))
+			ed.refreshDirty = false
 		}
 	}
 
@@ -275,17 +282,22 @@ func main() {
 
 }
 
-func HightlightTextByPattern(text string, pattern string) []syntax.Token {
+func HightlightTextByPattern(text string, pattern *regexp.Regexp) []syntax.Token {
 	var tokens []syntax.Token
 
-	re := regexp.MustCompile(pattern)
-	matches := re.FindAllIndex([]byte(text), -1)
+	matches := pattern.FindAllStringIndex(text, -1)
+	byteOffset := 0
+	runeOffset := 0
 	for _, match := range matches {
+		runeOffset += utf8.RuneCountInString(text[byteOffset:match[0]])
+		start := runeOffset
+		runeOffset += utf8.RuneCountInString(text[match[0]:match[1]])
 		tokens = append(tokens, syntax.Token{
-			Start: match[0],
-			End:   match[1],
+			Start: start,
+			End:   runeOffset,
 			Scope: "keyword",
 		})
+		byteOffset = match[1]
 	}
 
 	return tokens
