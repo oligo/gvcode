@@ -43,7 +43,10 @@ type Editor struct {
 	// gutterManager manages multiple gutter providers (line numbers, breakpoints, etc.)
 	gutterManager *gutter.Manager
 	// hooks
-	onPaste   BeforePasteHook
+	onPaste         BeforePasteHook
+	onEnterHook     EnterHook
+	onTextInputHook TextInputHook
+
 	completor Completion
 	// last input when the editor received an EditEvent.
 	lastInput *key.EditEvent
@@ -347,6 +350,12 @@ func (e *Editor) Text() string {
 	srcReader := buffer.NewReader(e.text.Source())
 	e.scratch = srcReader.ReadAll(e.scratch)
 	return string(e.scratch)
+}
+
+// TextView returns the underlying text view for advanced text manipulation.
+func (e *Editor) TextView() *textview.TextView {
+	e.initBuffer()
+	return e.text
 }
 
 // ReadTextBetween reads text between two rune offsets (start inclusive, end exclusive).

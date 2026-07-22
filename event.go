@@ -442,6 +442,18 @@ func (e *Editor) onTextInput(ke key.EditEvent) {
 		return
 	}
 
+	// call text input hook
+	if e.onTextInputHook != nil && e.onTextInputHook(e, ke) {
+		e.scrollCaret = true
+		e.scroller.Stop()
+		e.text.MoveCaret(0, 0)
+		e.lastInput = &ke
+
+		finalStart, finalEnd := e.Selection()
+		e.snippetCtx.OnInsertAt(finalStart, finalEnd)
+		return
+	}
+
 	if e.autoInsertions == nil {
 		e.autoInsertions = make(map[int]rune)
 	}
@@ -605,6 +617,13 @@ func (e *Editor) onPasteEvent(ke transfer.DataEvent) EditorEvent {
 func (e *Editor) onInsertLineBreak(ke key.Event) EditorEvent {
 	if e.mode == ModeReadOnly {
 		return nil
+	}
+
+	if e.onEnterHook != nil && e.onEnterHook(e) {
+		e.scrollCaret = true
+		e.scroller.Stop()
+		e.text.MoveCaret(0, 0)
+		return ChangeEvent{}
 	}
 
 	e.text.IndentOnBreak("\n")

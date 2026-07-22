@@ -161,12 +161,27 @@ func WithColorScheme(scheme syntax.ColorScheme) EditorOption {
 	}
 }
 
-// BeforePasteHook defines a hook to be called before pasting text to transform the text.
-type BeforePasteHook func(text string) string
-
+// AddBeforePasteHook registers a hook to transform the pasted text.
 func AddBeforePasteHook(hook BeforePasteHook) EditorOption {
-	return func(ed *Editor) {
-		ed.onPaste = hook
+	return func(e *Editor) {
+		e.initBuffer()
+		e.onPaste = hook
+	}
+}
+
+// AddEnterHook registers a hook to add custom logic which is called when a Enter/Return is pressed.
+func AddEnterHook(hook EnterHook) EditorOption {
+	return func(e *Editor) {
+		e.initBuffer()
+		e.onEnterHook = hook
+	}
+}
+
+// AddTextInputHook registers a hook to add custom logic which is called when normal text character is typed.
+func AddTextInputHook(hook TextInputHook) EditorOption {
+	return func(e *Editor) {
+		e.initBuffer()
+		e.onTextInputHook = hook
 	}
 }
 
