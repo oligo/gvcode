@@ -72,6 +72,39 @@ func TestNearestMatchingBrackets(t *testing.T) {
 			tc.setup()
 			left, right := view.NearestMatchingBrackets()
 			if left != tc.want[0] || right != tc.want[1] {
+				t.Logf("expected [%d, %d], got [%d, %d]", tc.want[0], tc.want[1], left, right)
+				t.Fail()
+			}
+		})
+	}
+
+	// Test self-paired brackets (e.g. $$).
+	selfPairedCases := []struct {
+		input string
+		caret int
+		want  []int
+	}{
+		// $$ with caret between them — the right $ is the closing bracket.
+		{"$$", 1, []int{0, 1}},
+		// $$ with caret before both — finds the pair to the right.
+		{"$$", 0, []int{0, 1}},
+		// $$ with caret after both — finds the pair to the left.
+		{"$$", 2, []int{0, 1}},
+		// $abc$ with caret inside content — finds enclosing pair.
+		{"$abc$", 0, []int{0, 4}},
+		{"$abc$", 2, []int{0, 4}},
+	}
+
+	for i, tc := range selfPairedCases {
+		t.Run(fmt.Sprintf("selfPaired_%d", i), func(t *testing.T) {
+			view.BracketsQuotes.SetBrackets(map[rune]rune{'$': '$'})
+			view.SetText(tc.input)
+			view.Layout(gtx, shaper)
+			view.SetCaret(tc.caret, tc.caret)
+			left, right := view.NearestMatchingBrackets()
+			if left != tc.want[0] || right != tc.want[1] {
+				t.Logf("input=%q caret=%d: expected [%d, %d], got [%d, %d]",
+					tc.input, tc.caret, tc.want[0], tc.want[1], left, right)
 				t.Fail()
 			}
 		})

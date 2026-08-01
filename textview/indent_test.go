@@ -160,6 +160,12 @@ func TestIndentOnBreak(t *testing.T) {
 		vw.TabWidth = 4
 		vw.SoftTab = false
 		vw.TextSize = unit.Sp(14)
+		vw.BracketsQuotes.SetBrackets(map[rune]rune{
+			'(': ')',
+			'{': '}',
+			'[': ']',
+			'$': '$',
+		})
 		vw.SetText(input)
 
 		gtx := layout.Context{}
@@ -205,6 +211,13 @@ func TestIndentOnBreak(t *testing.T) {
 			input:     "abc{}",
 			selection: 4,
 			want:      "abc{\n\t\n}",
+			wantMoves: 3,
+		},
+		// check self-paired brackets
+		{
+			input:     "abc$$",
+			selection: 4,
+			want:      "abc$\n\t\n$",
 			wantMoves: 3,
 		},
 		{

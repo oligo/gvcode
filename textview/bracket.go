@@ -67,6 +67,12 @@ func (p *runePairs) contains(r rune) (bool, bool) {
 	return false, false
 }
 
+// isSelfPaired reports whether r is a bracket that maps to itself (e.g. $:$).
+func (p *runePairs) isSelfPaired(r rune) bool {
+	v, ok := p.opening[r]
+	return ok && v == r
+}
+
 // bracketQuotes holds configured bracket pairs and quote pairs.
 type bracketsQuotes struct {
 	// A set of quote pairs that can be auto-completed when the opening half is entered.
@@ -139,6 +145,13 @@ func (bq *bracketsQuotes) GetCounterpart(r rune) (_ rune, isOpening bool) {
 	return rune(0), false
 }
 
+func (bq *bracketsQuotes) IsSelfPairedBracket(r rune) bool {
+	if bq.bracketPairs == nil {
+		bq.SetBrackets(builtinBracketPairs)
+	}
+	return bq.bracketPairs.isSelfPaired(r)
+}
+
 func (bq *bracketsQuotes) GetOpeningBracket(r rune) (rune, bool) {
 	if bq.bracketPairs == nil {
 		bq.SetBrackets(builtinBracketPairs)
@@ -190,11 +203,27 @@ func (e *TextView) NearestMatchingBrackets() (left int, right int) {
 
 	if isBracket, isLeft := e.BracketsQuotes.ContainsBracket(nearest); isBracket {
 		if isLeft {
-			left = start
+			// Self-paired brackets (like $:$) need positional context:
+			// if the previous rune is the same bracket, the caret is
+			// between an opening/closing pair, so the current rune is
+			// the closing one.
+			if e.BracketsQuotes.IsSelfPairedBracket(nearest) && start > 0 {
+				if prev, pErr := e.src.ReadRuneAt(start - 1); pErr == nil && prev == nearest {
+					left = start - 1
+					right = start
+					stack.push(nearest, start-1)
+				} else {
+					left = start
+					stack.push(nearest, start)
+				}
+			} else {
+				left = start
+				stack.push(nearest, start)
+			}
 		} else {
 			right = start
+			stack.push(nearest, start)
 		}
-		stack.push(nearest, start)
 	}
 
 	offset := start
@@ -249,6 +278,21 @@ func (e *TextView) NearestMatchingBrackets() (left int, right int) {
 
 			// found left half bracket
 			if _, isOpening := e.BracketsQuotes.ContainsBracket(next); isOpening {
+				// For self-paired brackets (like $$), check if the
+				// current rune actually closes an opening on the stack
+				// since the same rune serves as both opening and closing.
+				if e.BracketsQuotes.IsSelfPairedBracket(next) {
+					if r, _ := stack.peek(); r == next {
+						stack.pop()
+						if stack.depth() == 0 {
+							right = offset
+							break
+						}
+					} else {
+						stack.push(next, offset)
+					}
+					continue
+				}
 				stack.push(next, offset)
 			}
 
